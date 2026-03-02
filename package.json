@@ -1,0 +1,35 @@
+{
+  "name": "dash-p2p",
+  "version": "1.0.0",
+  "description": "Interface to the Dash P2P network for Dashcore",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "mocha",
+    "test:coverage": "c8 mocha"
+  },
+  "dependencies": {
+    "bloom-filter": "^0.1.0",
+    "dash-core-sdk": "1.1.0-dev.2",
+    "eventemitter3": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "@types/sinon": "^17.0.0",
+    "c8": "^9.0.0",
+    "chai": "^4.3.0",
+    "mocha": "^10.0.0",
+    "sinon": "^17.0.0",
+    "typescript": "^5.5.3"
+  }
+}
