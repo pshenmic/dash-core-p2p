@@ -30,6 +30,8 @@ import { GetAddrMessage } from './commands/GetAddrMessage.js';
 import { DSQueueMessage } from './commands/DSQueueMessage.js';
 import { SyncStatusCountMessage } from './commands/SyncStatusCountMessage.js';
 import { TXLockRequestMessage } from './commands/TXLockRequestMessage.js';
+import { SendAddrV2Message } from './commands/SendAddrV2Message.js';
+import { AddrV2Message } from './commands/AddrV2Message.js';
 
 export interface BuilderOptions {
   network?: Network;
@@ -84,6 +86,8 @@ const COMMAND_MAP: Record<string, new (arg: any, options: any) => Message> = {
   dsq: DSQueueMessage,
   ssc: SyncStatusCountMessage,
   ix: TXLockRequestMessage,
+  sendaddrv2: SendAddrV2Message,
+  addrv2: AddrV2Message,
 };
 
 export function builder(options?: BuilderOptions): Builder {
@@ -93,7 +97,7 @@ export function builder(options?: BuilderOptions): Builder {
     opts.network = Networks.defaultNetwork;
   }
 
-  opts.protocolVersion = opts.protocolVersion ?? 70215;
+  opts.protocolVersion = opts.protocolVersion ?? 70238;
 
   const exported: Builder = {
     defaults: {
@@ -128,6 +132,8 @@ export function builder(options?: BuilderOptions): Builder {
       dsq: 'DSQueue',
       ssc: 'SyncStatusCount',
       ix: 'TXLockRequest',
+      sendaddrv2: 'SendAddrV2',
+      addrv2: 'AddrV2',
     },
     unsupportedCommands: [
       'qsendrecsigs',

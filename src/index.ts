@@ -20,3 +20,7 @@ export type { PeerOptions, TCPSocket, SocketFactory, PeerStatusType } from './Pe
 export { Pool } from './Pool.js';
 export type { PoolOptions, AddrInfo } from './Pool.js';
 
+export { SendAddrV2Message } from './messages/commands/SendAddrV2Message.js';
+export { AddrV2Message, NetworkID } from './messages/commands/AddrV2Message.js';
+export type { AddrV2Entry, NetworkIDType } from './messages/commands/AddrV2Message.js';
+
