@@ -1,6 +1,6 @@
 {
-  "name": "dash-p2p",
-  "version": "1.0.0",
+   "name": "dash-core-p2p",
+  "version": "0.0.1",
   "description": "Interface to the Dash P2P network for Dashcore",
   "type": "module",
   "main": "dist/index.js",
