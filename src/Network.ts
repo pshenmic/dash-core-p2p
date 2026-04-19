@@ -1,16 +1,10 @@
 import { hexToBytes } from './utils/binary.js';
 
-export interface NetworkSeed {
-  ip: { v4?: string; v6?: string };
-  port?: number;
-}
-
 export interface Network {
   name: string;
   port: number;
   networkMagic: Uint8Array;
   dnsSeeds: string[];
-  seeds?: NetworkSeed[];
 }
 
 const livenet: Network = {

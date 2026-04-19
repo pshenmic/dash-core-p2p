@@ -1,5 +1,5 @@
 export { Networks } from './Network.js';
-export type { Network, NetworkSeed } from './Network.js';
+export type { Network } from './Network.js';
 
 export { Inventory, InventoryType, InventoryTypeName } from './Inventory.js';
 export type { InventoryObject } from './Inventory.js';

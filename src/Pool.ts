@@ -76,10 +76,6 @@ export class Pool extends EventEmitter {
     this.network = Networks.get(opts.network as string) ?? Networks.defaultNetwork;
     this.relay = opts.relay !== false;
 
-    for (const seed of this.network?.seeds ?? []) {
-      this._addAddr({ ip: seed.ip, port: seed.port });
-    }
-
     if (opts.addrs) {
       for (const addr of opts.addrs) {
         this._addAddr(addr);
