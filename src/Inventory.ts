@@ -12,6 +12,10 @@ export const InventoryType = {
   TX: 1,
   BLOCK: 2,
   FILTERED_BLOCK: 3,
+  DSTX: 16,
+  CLSIG: 29,
+  ISLOCK: 30,
+  ISDLOCK: 31,
 } as const;
 
 export const InventoryTypeName: string[] = ['ERROR', 'TX', 'BLOCK', 'FILTERED_BLOCK'];
@@ -52,6 +56,14 @@ export class Inventory {
 
   static forTransaction(hash: Uint8Array | string): Inventory {
     return Inventory.forItem(InventoryType.TX, hash);
+  }
+
+  static forISLock(hash: Uint8Array | string): Inventory {
+    return Inventory.forItem(InventoryType.ISLOCK, hash);
+  }
+
+  static forCLSig(hash: Uint8Array | string): Inventory {
+    return Inventory.forItem(InventoryType.CLSIG, hash);
   }
 
   toBytes(): Uint8Array {

@@ -30,7 +30,10 @@ export class HeadersMessage extends Message {
     this.headers = [];
 
     for (let i = 0; i < count; i++) {
-      this.headers.push(parser.read(80));
+      // Use .slice() to get a proper copy with a fresh ArrayBuffer at offset 0.
+      // BlockHeader.fromBytes uses `new DataView(bytes.buffer)` which ignores
+      // byteOffset — a subarray into a larger message buffer would be misread.
+      this.headers.push(parser.read(80).slice());
 
       const txnCount = parser.readUInt8();
       if (txnCount !== 0) {
