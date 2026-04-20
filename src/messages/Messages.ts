@@ -29,7 +29,7 @@ export class Messages {
       this[name] = this.builderInstance.commands[key]!;
     }
 
-    this.network = (options?.network as Network) ?? Networks.defaultNetwork;
+    this.network = Networks.get(options?.network as string | Network) ?? Networks.defaultNetwork;
   }
 
   /**

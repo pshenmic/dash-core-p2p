@@ -32,6 +32,9 @@ import { SyncStatusCountMessage } from './commands/SyncStatusCountMessage.js';
 import { TXLockRequestMessage } from './commands/TXLockRequestMessage.js';
 import { SendAddrV2Message } from './commands/SendAddrV2Message.js';
 import { AddrV2Message } from './commands/AddrV2Message.js';
+import { SendHeadersMessage } from './commands/SendHeadersMessage.js';
+import { ISLockMessage } from './commands/ISLockMessage.js';
+import { CLSigMessage } from './commands/CLSigMessage.js';
 
 export interface BuilderOptions {
   network?: Network;
@@ -88,6 +91,9 @@ const COMMAND_MAP: Record<string, new (arg: any, options: any) => Message> = {
   ix: TXLockRequestMessage,
   sendaddrv2: SendAddrV2Message,
   addrv2: AddrV2Message,
+  sendheaders: SendHeadersMessage,
+  islock: ISLockMessage,
+  clsig: CLSigMessage,
 };
 
 export function builder(options?: BuilderOptions): Builder {
@@ -95,6 +101,8 @@ export function builder(options?: BuilderOptions): Builder {
 
   if (!opts.network) {
     opts.network = Networks.defaultNetwork;
+  } else if (typeof opts.network === 'string') {
+    opts.network = Networks.get(opts.network) ?? Networks.defaultNetwork;
   }
 
   opts.protocolVersion = opts.protocolVersion ?? 70238;
@@ -134,12 +142,14 @@ export function builder(options?: BuilderOptions): Builder {
       ix: 'TXLockRequest',
       sendaddrv2: 'SendAddrV2',
       addrv2: 'AddrV2',
+      sendheaders: 'SendHeaders',
+      islock: 'ISLock',
+      clsig: 'CLSig',
     },
     unsupportedCommands: [
       'qsendrecsigs',
       'senddsq',
       'sendcmpct',
-      'sendheaders',
       'txlvote',
       'spork',
       'getsporks',
@@ -165,6 +175,25 @@ export function builder(options?: BuilderOptions): Builder {
       'govsync',
       'govobj',
       'govobjvote',
+      // DIP-24 deterministic InstantSend lock; payload shape differs from
+      // classic islock and we don't parse it yet. Ignore instead of crashing.
+      'isdlock',
+      // Masternode/quorum DKG and auth commands — safe to ignore in an SPV
+      // client that only cares about txs, blocks, and filter matches.
+      'mnauth',
+      'qfcommit',
+      'qcontrib',
+      'qcomplaint',
+      'qjustify',
+      'qpcommit',
+      'qwatch',
+      'qsigshare',
+      'qsigrec',
+      'qsigsinv',
+      'qgetsigs',
+      'qbsigs',
+      'qgetdata',
+      'qdata',
     ],
     commands: {},
     add(key: string, Command: new (arg: unknown, options: MessageOptions) => Message) {

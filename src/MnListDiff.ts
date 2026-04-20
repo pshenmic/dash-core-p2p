@@ -5,12 +5,6 @@ import { bytesToHex, hexToBytes } from './utils/binary.js';
 
 const SML_ENTRY_SIZE = 151;
 
-function varintSize(n: number): number {
-  if (n < 0xfd) return 1;
-  if (n < 0x10000) return 3;
-  if (n < 0x100000000) return 5;
-  return 9;
-}
 
 export interface SimplifiedMNListEntry {
   proRegTxHash: string;  // 32-byte hash, hex
@@ -67,13 +61,7 @@ export class MnListDiff {
     // payload.slice() produces a fresh copy with byteOffset=0, required by Transaction.fromBytes.
     const cbTxStart = reader.pos;
     diff.cbTx = Transaction.fromBytes(payload.slice(cbTxStart));
-    // Compute exact wire byte count: base bytes + optional extraPayload (varint length prefix + data)
-    const baseLength = diff.cbTx.bytes().length;
-    const extra = diff.cbTx.extraPayload;
-    const cbTxLength = extra
-      ? baseLength + varintSize(extra.length) + extra.length
-      : baseLength;
-    reader.pos += cbTxLength;
+    reader.pos += diff.cbTx.bytes().length;
 
     const deletedMNsCount = reader.readVarintNum();
     diff.deletedMNs = [];

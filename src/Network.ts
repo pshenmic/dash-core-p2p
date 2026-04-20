@@ -12,10 +12,11 @@ const livenet: Network = {
   port: 9999,
   networkMagic: hexToBytes('bf0c6bbd'),
   dnsSeeds: [
-    'dnsseed.darkcoin.io',
-    'dnsseed.dashdot.io',
-    'dnsseed.masternode.io',
-    'dnsseed.dashpay.io',
+    'dnsseed.dash.org'
+    // 'dnsseed.darkcoin.io',
+    // 'dnsseed.dashdot.io',
+    // 'dnsseed.masternode.io',
+    // 'dnsseed.dashpay.io',
   ],
 };
 

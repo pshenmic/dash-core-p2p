@@ -256,4 +256,78 @@ describe('Command Messages', function () {
       message.getPayload().length.should.equal(0);
     });
   });
+
+  describe('SendHeaders', function () {
+    it('should have empty payload', function () {
+      const message = messages.SendHeaders();
+      message.getPayload().length.should.equal(0);
+    });
+
+    it('should have command sendheaders', function () {
+      const message = messages.SendHeaders();
+      message.command.should.equal('sendheaders');
+    });
+  });
+
+  describe('ISLock', function () {
+    it('should create with default values', function () {
+      const message = messages.ISLock();
+      message.inputs.should.deep.equal([]);
+      message.sig.length.should.equal(96);
+    });
+
+    it('should serialize and deserialize correctly', function () {
+      const txid = 'ab'.repeat(32);
+      const sig = new Uint8Array(96).fill(0xcc);
+      const message = messages.ISLock({
+        inputs: [{ txid: 'aa'.repeat(32), vout: 0 }, { txid: 'bb'.repeat(32), vout: 2 }],
+        txid,
+        sig,
+      });
+      const payload = message.getPayload();
+      const parsed = messages.ISLock.fromBytes(payload);
+      parsed.inputs.length.should.equal(2);
+      parsed.inputs[0].txid.should.equal('aa'.repeat(32));
+      parsed.inputs[0].vout.should.equal(0);
+      parsed.inputs[1].txid.should.equal('bb'.repeat(32));
+      parsed.inputs[1].vout.should.equal(2);
+      parsed.txid.should.equal(txid);
+      parsed.sig.should.deep.equal(sig);
+    });
+
+    it('should produce correct payload length', function () {
+      const message = messages.ISLock({
+        inputs: [{ txid: '00'.repeat(32), vout: 1 }],
+        txid: '00'.repeat(32),
+        sig: new Uint8Array(96),
+      });
+      // varint(1)=1 + 1*36 + 32 + 96 = 165
+      message.getPayload().length.should.equal(165);
+    });
+  });
+
+  describe('CLSig', function () {
+    it('should create with default values', function () {
+      const message = messages.CLSig();
+      message.height.should.equal(0);
+      message.sig.length.should.equal(96);
+    });
+
+    it('should serialize and deserialize correctly', function () {
+      const blockHash = 'cd'.repeat(32);
+      const sig = new Uint8Array(96).fill(0xee);
+      const message = messages.CLSig({ height: 123456, blockHash, sig });
+      const payload = message.getPayload();
+      const parsed = messages.CLSig.fromBytes(payload);
+      parsed.height.should.equal(123456);
+      parsed.blockHash.should.equal(blockHash);
+      parsed.sig.should.deep.equal(sig);
+    });
+
+    it('should produce correct payload length', function () {
+      const message = messages.CLSig({ height: 1, blockHash: '00'.repeat(32), sig: new Uint8Array(96) });
+      // 4 + 32 + 96 = 132
+      message.getPayload().length.should.equal(132);
+    });
+  });
 });

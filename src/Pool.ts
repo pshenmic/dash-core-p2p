@@ -6,7 +6,7 @@ import { strToBytes, bytesToHex } from './utils/binary.js';
 import type { Message } from './messages/Message.js';
 import { utils as sdkUtils } from 'dash-core-sdk';
 
-const { SHA256 } = sdkUtils;
+const { doubleSHA256 } = sdkUtils;
 
 function now(): number {
   return Math.floor(Date.now() / 1000);
@@ -50,7 +50,7 @@ export class Pool extends EventEmitter {
     'version', 'inv', 'getdata', 'ping', 'pong', 'addr',
     'getaddr', 'verack', 'reject', 'alert', 'headers', 'block', 'merkleblock',
     'tx', 'getblocks', 'getheaders', 'error', 'filterload', 'filteradd',
-    'filterclear', 'getmnlistdiff', 'mnlistdiff',
+    'filterclear', 'getmnlistdiff', 'mnlistdiff', 'islock', 'clsig',
   ];
 
   keepalive: boolean = false;
@@ -234,7 +234,7 @@ export class Pool extends EventEmitter {
     const v6 = addr.ip.v6 ?? '';
     const v4 = addr.ip.v4 ?? '';
     const hashInput = strToBytes(v6 + v4 + String(addr.port));
-    addr.hash = bytesToHex(SHA256(hashInput));
+    addr.hash = bytesToHex(doubleSHA256(hashInput));
 
     const exists = this._addrs.some((a) => a.hash === addr.hash);
     if (!exists) {
