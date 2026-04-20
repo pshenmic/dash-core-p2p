@@ -1,26 +1,75 @@
 /**
- * Wallet sync — SPV with outpoint-aware bloom filter (rev2).
+ * Wallet sync — proper SPV with outpoint-aware bloom filter.
  *
- * Fix for BIP37 per-connection filter state: when peer A's filter learns an
- * outpoint from a matched receive, peer B's filter doesn't — so a spend
- * served by B is dropped and inflows accumulate without matching spends.
- *   1. FilterAdd-broadcast every new UTXO's outpoint to every peer.
- *   2. After the primary pass, re-scan from the earliest UTXO to tip so
- *      peers that hadn't yet learned an outpoint catch the missed spend.
- *   3. On peerready, replay every known outpoint after FilterLoad so fresh
- *      peers start with the full outpoint set.
+ * SPV invariant
+ * ─────────────
+ * Every block whose contents touch wallet state has been PoW-verified by
+ * us first. The only trust root is INITIAL_TIP_HASH — a recent, finalised
+ * chain tip pinned below. From that anchor the header race validates
+ * forward per header: prev-hash chains, timestamp below now+2h, nBits
+ * matches DGWv3's expectation (once we have 24 blocks of history) and
+ * within the global PoW limit, and x11(header) ≤ target(nBits). Every
+ * accepted header's hash is recorded in `hashToHeight`.
  *
- * Run: npx tsx examples/wallet_sync_spv_rev2.ts
+ * The birthday scan does not invent its view of the chain from peer data.
+ * When a paging peer answers `getblocks` with `inv(BLOCK)`, each hash must
+ * already be present in `hashToHeight` at the next expected height; an
+ * unknown hash is treated as hostile (or from a peer briefly ahead of our
+ * own header sync) and the batch is truncated at that point. We never
+ * issue `getdata(FILTERED_BLOCK)` for a hash we haven't PoW-verified
+ * ourselves, which closes the SPV hole in earlier revisions where paging
+ * hashes were written into `hashToHeight` without validation.
+ *
+ * Every `peertx` — birthday and live — is gated on `peerMerkleCtx`: we
+ * only apply a transaction after the same peer has just delivered a
+ * merkleblock whose merkle root we verified, and whose matches include
+ * that txid. A live tx arriving before its merkleblock is parked in
+ * `pendingTxs` and drained once the merkleblock lands.
+ *
+ * BIP37 fix
+ * ──────────────
+ * Naïve BIP37 SPV undercounts spends because filter state is per-peer:
+ * when peer A serves a merkleblock matching one of our outputs,
+ * BLOOM_UPDATE_ALL adds that outpoint to A's filter only. If peer B later
+ * serves the spend, B's filter drops it and the running balance inflates.
+ * converges every peer's filter onto the same outpoint set:
+ *   1. FilterAdd-broadcast every new UTXO's outpoint to every peer the
+ *      moment we observe it.
+ *   2. After primary paging drains, run a reconciliation pass from the
+ *      earliest UTXO's height to the tip. By then every peer's filter
+ *      holds every outpoint, so spends missed on pass 1 are picked up.
+ *   3. On peerready, replay every current UTXO via FilterAdd right after
+ *      FilterLoad so fresh peers start with the full outpoint set.
+ *
+ * DGWv3 difficulty retargeting
+ * ────────────────────────────
+ * Dash retargets every block via Dark Gravity Wave v3: a weighted
+ * running average of the last 24 targets, rescaled by the observed
+ * timespan clamped to [1/3x, 3x] of the ideal. We keep a rolling
+ * 24-tuple of `{time, nBits}` in memory and on disk; once it's full,
+ * every new header must carry the nBits DGWv3 would have produced.
+ *
+ * Deliberately not included
+ * ─────────────────────────
+ *   - Reorg handling. A reorg inside the scanned range requires manual
+ *     state reset.
+ *
  */
 
 import fs from 'fs';
 import {
-  Pool, BloomFilter, Inventory, Messages,
-  type ISLockArgs, type CLSigArgs, type Peer, type Message,
+  BloomFilter,
+  type CLSigArgs,
+  Inventory,
+  type ISLockArgs,
+  type Message,
+  Messages,
+  type Peer,
+  Pool,
 } from '../src';
-import { MerkleBlock, Transaction } from 'dash-core-sdk';
-import { hexToBytes } from 'dash-core-sdk/src/utils';
-import { Base58Check } from 'dash-core-sdk/src/base58check';
+import {MerkleBlock, Transaction} from 'dash-core-sdk';
+import {hexToBytes} from 'dash-core-sdk/src/utils';
+import {Base58Check} from 'dash-core-sdk/src/base58check';
 // @ts-expect-error — no bundled types for @dashevo/x11-hash-js
 import x11 from '@dashevo/x11-hash-js';
 
@@ -42,6 +91,11 @@ const HEADER_RACE_PEERS = 6;
 const POW_LIMIT_BITS = 0x1e0fffff;
 const MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;
 
+// DGWv3 parameters — must match Dash Core's consensus values.
+const DGW_PAST_BLOCKS = 24;
+const DGW_TARGET_SPACING = 150;
+const DGW_TARGET_TIMESPAN = DGW_PAST_BLOCKS * DGW_TARGET_SPACING;
+
 if (!INITIAL_TIP_HASH || !Number.isFinite(INITIAL_TIP_HEIGHT)) {
   throw new Error('INITIAL_TIP_HASH and INITIAL_TIP_HEIGHT must be set.');
 }
@@ -55,6 +109,55 @@ function bitsToTarget(bits: number): bigint {
 }
 
 const POW_LIMIT_TARGET = bitsToTarget(POW_LIMIT_BITS);
+
+// Inverse of bitsToTarget: pack a target into Bitcoin-style compact nBits.
+// Mirrors arith_uint256::GetCompact — the 0x00800000 bit is reserved as a
+// sign flag, so when the top byte of the 3-byte mantissa would set it we
+// shift right by one byte and bump the exponent.
+function targetToCompact(target: bigint): number {
+  if (target <= 0n) return 0;
+  let bits = 0;
+  for (let t = target; t > 0n; t >>= 1n) bits++;
+  let size = (bits + 7) >> 3;
+  let compact: number;
+  if (size <= 3) {
+    compact = Number(target << BigInt(8 * (3 - size)));
+  } else {
+    compact = Number(target >> BigInt(8 * (size - 3)));
+  }
+  if (compact & 0x00800000) {
+    compact >>>= 8;
+    size++;
+  }
+  return ((size << 24) | (compact & 0x007fffff)) >>> 0;
+}
+
+// Dash's DarkGravityWave v3: compute the nBits the next block should
+// carry given the last 24 blocks. `history` is oldest-to-newest of
+// length DGW_PAST_BLOCKS. Matches src/pow.cpp::DarkGravityWave.
+function dgwv3ExpectedBits(history: Array<{ time: number; nBits: number }>): number {
+  const n = history.length;
+  let bnPastTargetAvg = 0n;
+  for (let i = 1; i <= n; i++) {
+    const bnTarget = bitsToTarget(history[n - i]!.nBits);
+    if (i === 1) {
+      bnPastTargetAvg = bnTarget;
+    } else {
+      bnPastTargetAvg = (bnPastTargetAvg * BigInt(i) + bnTarget) / BigInt(i + 1);
+    }
+  }
+  let bnNew = bnPastTargetAvg;
+  const newest = history[n - 1]!;
+  const oldest = history[0]!;
+  let nActualTimespan = newest.time - oldest.time;
+  const lo = Math.floor(DGW_TARGET_TIMESPAN / 3);
+  const hi = DGW_TARGET_TIMESPAN * 3;
+  if (nActualTimespan < lo) nActualTimespan = lo;
+  if (nActualTimespan > hi) nActualTimespan = hi;
+  bnNew = (bnNew * BigInt(nActualTimespan)) / BigInt(DGW_TARGET_TIMESPAN);
+  if (bnNew > POW_LIMIT_TARGET) bnNew = POW_LIMIT_TARGET;
+  return targetToCompact(bnNew);
+}
 
 function bytesToHexReversed(bytes: Uint8Array): string {
   let out = '';
@@ -107,10 +210,12 @@ interface SyncState {
   birthdayScanned: boolean;
   scanLocatorHash: string | null;
   scanLocatorHeight?: number;
+  dgwvHistory?: Array<{ time: number; nBits: number }>;
 }
 
 const batchHashes = new Map<number, string>();
 const hashToHeight = new Map<string, number>();
+const dgwvHistory: Array<{ time: number; nBits: number }> = [];
 
 function loadSyncState(): SyncState {
   let state: SyncState = {
@@ -131,6 +236,14 @@ function loadSyncState(): SyncState {
   }
   batchHashes.set(INITIAL_TIP_HEIGHT, INITIAL_TIP_HASH);
   hashToHeight.set(INITIAL_TIP_HASH, INITIAL_TIP_HEIGHT);
+
+  if (Array.isArray(state.dgwvHistory)) {
+    for (const entry of state.dgwvHistory.slice(-DGW_PAST_BLOCKS)) {
+      if (typeof entry?.time === 'number' && typeof entry?.nBits === 'number') {
+        dgwvHistory.push({ time: entry.time, nBits: entry.nBits });
+      }
+    }
+  }
   return state;
 }
 
@@ -140,6 +253,7 @@ function saveSyncState(): void {
       tipHash: chainTipHash, tipHeight: chainTipHeight,
       batchHashes: Object.fromEntries(batchHashes),
       birthdayScanned, scanLocatorHash, scanLocatorHeight,
+      dgwvHistory,
     }));
   } catch (e) {
     console.warn('[state] could not save:', (e as Error).message);
@@ -172,6 +286,11 @@ function processHeaders(rawHeaders: Uint8Array[]): boolean {
   let prevHash = chainTipHash;
   let h = chainTipHeight;
   const added: Array<{ height: number; hash: string }> = [];
+  // Scratch copy of dgwvHistory: DGW validation needs it to advance as
+  // we walk the batch, but we only commit back to the live buffer after
+  // every header in the batch has passed. A mid-batch failure leaves the
+  // persisted state untouched.
+  const historyScratch = dgwvHistory.slice();
 
   for (const raw of rawHeaders) {
     const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
@@ -192,6 +311,13 @@ function processHeaders(rawHeaders: Uint8Array[]): boolean {
       console.warn(`[spv] header rejected at ~${h + 1}: invalid nBits=0x${nBits.toString(16)}`);
       return false;
     }
+    if (historyScratch.length >= DGW_PAST_BLOCKS) {
+      const expected = dgwv3ExpectedBits(historyScratch.slice(-DGW_PAST_BLOCKS));
+      if (nBits !== expected) {
+        console.warn(`[spv] header rejected at ~${h + 1}: DGWv3 mismatch nBits=0x${nBits.toString(16)} expected=0x${expected.toString(16)}`);
+        return false;
+      }
+    }
     const hashHex = hashHeaderRaw(raw);
     if (BigInt('0x' + hashHex) > target) {
       console.warn(`[spv] header rejected at ~${h + 1}: PoW fail hash ${hashHex.slice(0, 16)}…`);
@@ -201,6 +327,8 @@ function processHeaders(rawHeaders: Uint8Array[]): boolean {
     h++;
     prevHash = hashHex;
     added.push({ height: h, hash: hashHex });
+    historyScratch.push({ time, nBits });
+    if (historyScratch.length > DGW_PAST_BLOCKS) historyScratch.shift();
   }
 
   const prevHeight = chainTipHeight;
@@ -208,6 +336,8 @@ function processHeaders(rawHeaders: Uint8Array[]): boolean {
   chainTipHash = prevHash;
   for (const a of added) hashToHeight.set(a.hash, a.height);
   batchHashes.set(chainTipHeight, chainTipHash);
+  dgwvHistory.length = 0;
+  for (const e of historyScratch) dgwvHistory.push(e);
 
   const milestone = Math.ceil((prevHeight + 1) / 10_000) * 10_000;
   if (chainTipHeight >= milestone) {
@@ -272,8 +402,56 @@ type Phase = 'syncing-headers' | 'birthday-scan' | 'live';
 let phase: Phase = birthdayScanned ? 'live' : 'syncing-headers';
 
 const pendingBlocks: Uint8Array[] = [];
-const peerOutstanding = new Map<Peer, number>();
-const peerInFlight = new Map<Peer, Uint8Array[]>();
+
+// Single source of truth for in-flight filtered-block requests. Keyed by
+// display-hex hash. peerOutstandingCount is a derived O(1) counter kept
+// in lockstep; every mutation must go through addInFlight / removeInFlight
+// so the two never drift.
+interface InFlightRequest { peer: Peer; hashBytes: Uint8Array; sentAtMs: number }
+const inFlightRequests = new Map<string, InFlightRequest>();
+const peerOutstandingCount = new Map<Peer, number>();
+
+function addInFlight(peer: Peer, hashBytes: Uint8Array): void {
+  const hashHex = bytesToHexReversed(hashBytes);
+  inFlightRequests.set(hashHex, { peer, hashBytes, sentAtMs: Date.now() });
+  peerOutstandingCount.set(peer, (peerOutstandingCount.get(peer) ?? 0) + 1);
+}
+
+// Removes the entry and returns it. Returns null if the hash is no longer
+// tracked (late arrival, or already requeued by the watchdog).
+function removeInFlight(hashHex: string): InFlightRequest | null {
+  const req = inFlightRequests.get(hashHex);
+  if (!req) return null;
+  inFlightRequests.delete(hashHex);
+  const n = peerOutstandingCount.get(req.peer) ?? 0;
+  if (n > 0) peerOutstandingCount.set(req.peer, n - 1);
+  return req;
+}
+
+function outstanding(peer: Peer): number {
+  return peerOutstandingCount.get(peer) ?? 0;
+}
+
+// Per-peer backoff. A peer that stalls STALL_STRIKES times is put on
+// cooldown: excluded from dispatch / paging-leader candidacy until
+// peerCooldownUntilMs, at which point we let it probe once more.
+const peerStallCount = new Map<Peer, number>();
+const peerCooldownUntilMs = new Map<Peer, number>();
+const STALL_TIMEOUT_MS = 45_000;
+const STALL_STRIKES = 3;
+const COOLDOWN_MS = 120_000;
+const WATCHDOG_INTERVAL_MS = 15_000;
+
+function peerOnCooldown(peer: Peer): boolean {
+  const until = peerCooldownUntilMs.get(peer);
+  if (until === undefined) return false;
+  if (Date.now() >= until) {
+    peerCooldownUntilMs.delete(peer);
+    return false;
+  }
+  return true;
+}
+
 let pagingDone = false;
 let blocksScanned = 0;
 let lastSaveAtBlock = 0;
@@ -281,19 +459,16 @@ let primaryPassBlocks = 0;
 let pagingPeer: Peer | null = null;
 let awaitingPageFrom: Peer | null = null;
 let inReconcile = false;
-
-function outstanding(p: Peer): number { return peerOutstanding.get(p) ?? 0; }
-
-function decOutstanding(p: Peer): void {
-  const n = outstanding(p);
-  if (n > 0) peerOutstanding.set(p, n - 1);
-}
+let watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
 function phaseLabel(): string { return inReconcile ? '[reconcile]' : '[scan]'; }
 
 function pickPagingPeer(): Peer | null {
-  if (pagingPeer && readyPeers.has(pagingPeer)) return pagingPeer;
-  pagingPeer = [...readyPeers][0] ?? null;
+  if (pagingPeer && readyPeers.has(pagingPeer) && !peerOnCooldown(pagingPeer)) return pagingPeer;
+  pagingPeer = null;
+  for (const p of readyPeers) {
+    if (!peerOnCooldown(p)) { pagingPeer = p; break; }
+  }
   return pagingPeer;
 }
 
@@ -320,6 +495,7 @@ function startBirthdayScan(): void {
   }
 
   scanLocatorHeight = startHeight;
+  startScanWatchdog();
   const leader = pickPagingPeer();
   if (leader) requestBlockBatch(leader, startHash);
 }
@@ -332,18 +508,16 @@ function requestBlockBatch(peer: Peer, fromHash: string): void {
 
 function dispatchBatch(peer: Peer): void {
   if (pendingBlocks.length === 0) return;
+  if (peerOnCooldown(peer)) return;
   const have = outstanding(peer);
   const room = FILTERED_BLOCK_BATCH - have;
   if (room <= 0) return;
 
   const take = Math.min(room, pendingBlocks.length);
   const hashes = pendingBlocks.splice(0, take);
+  for (const h of hashes) addInFlight(peer, h);
+
   const items = hashes.map(hash => ({ type: Inventory.TYPE.FILTERED_BLOCK, hash }));
-
-  peerOutstanding.set(peer, have + items.length);
-  const list = peerInFlight.get(peer) ?? [];
-  peerInFlight.set(peer, list.concat(hashes));
-
   peer.sendMessage(M.GetData(items));
 }
 
@@ -386,9 +560,10 @@ function startReconciliationPass(): boolean {
 
 function checkScanDone(): void {
   if (!pagingDone || pendingBlocks.length > 0) return;
-  for (const n of peerOutstanding.values()) if (n > 0) return;
+  if (inFlightRequests.size > 0) return;
   if (!inReconcile && startReconciliationPass()) return;
 
+  stopScanWatchdog();
   birthdayScanned = true;
   scanLocatorHash = null;
   saveSyncState();
@@ -404,6 +579,64 @@ function checkScanDone(): void {
   for (const u of utxos.values()) {
     const conf = chainTipHeight - u.height + 1;
     console.log(`  ${u.txid.slice(0, 16)}…:${u.vout}  ${Number(u.satoshis) / 1e8} DASH  conf=${conf}  (${u.address})`);
+  }
+}
+
+// Watchdog: requeue in-flight requests whose peer has gone silent past
+// STALL_TIMEOUT_MS. Timeout is per-request (sentAtMs), so a peer making
+// steady progress is unaffected — only individual stalled hashes move.
+// Late arrivals from the original peer are handled in peermerkleblock by
+// the removeInFlight(null) branch: they're still merkle-verified and
+// applied idempotently, but the scheduler bookkeeping is skipped.
+function sweepStalledRequests(): void {
+  if (phase !== 'birthday-scan' || inFlightRequests.size === 0) return;
+
+  const now = Date.now();
+  const cap = Math.max(4, Math.floor(inFlightRequests.size * 0.1));
+  const stalledHashes: string[] = [];
+  const stalledPeers = new Set<Peer>();
+
+  for (const [hashHex, req] of inFlightRequests) {
+    if (now - req.sentAtMs <= STALL_TIMEOUT_MS) continue;
+    stalledHashes.push(hashHex);
+    stalledPeers.add(req.peer);
+    if (stalledHashes.length >= cap) break;
+  }
+
+  if (stalledHashes.length === 0) return;
+
+  for (const hashHex of stalledHashes) {
+    const req = removeInFlight(hashHex);
+    if (req) pendingBlocks.push(req.hashBytes);
+  }
+
+  for (const peer of stalledPeers) {
+    const strikes = (peerStallCount.get(peer) ?? 0) + 1;
+    if (strikes >= STALL_STRIKES) {
+      peerCooldownUntilMs.set(peer, now + COOLDOWN_MS);
+      peerStallCount.set(peer, 0);
+      if (pagingPeer === peer) pagingPeer = null;
+      console.warn(`[watchdog] ${peer.host} on cooldown for ${COOLDOWN_MS / 1000}s after ${STALL_STRIKES} stalls`);
+    } else {
+      peerStallCount.set(peer, strikes);
+      console.warn(`[watchdog] ${peer.host} stalled on ${stalledHashes.length} block(s) (strike ${strikes}/${STALL_STRIKES})`);
+    }
+  }
+
+  drainToIdlePeers();
+  checkScanDone();
+}
+
+function startScanWatchdog(): void {
+  if (watchdogTimer) return;
+  watchdogTimer = setInterval(sweepStalledRequests, WATCHDOG_INTERVAL_MS);
+  watchdogTimer.unref?.();
+}
+
+function stopScanWatchdog(): void {
+  if (watchdogTimer) {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
   }
 }
 
@@ -450,6 +683,21 @@ function applyTransaction(tx: Transaction, height: number): void {
 interface PeerMerkleCtx { blockHash: string; height: number; matches: Set<string> }
 const peerMerkleCtx = new Map<Peer, PeerMerkleCtx>();
 
+// Live-phase stash for txs that arrive ahead of their merkleblock. A
+// peer that ships `tx` before `merkleblock` leaves us without a verified
+// merkle proof; we park the tx here keyed by txid and drain it once the
+// merkleblock lands and the txid appears in the verified matches set.
+const pendingTxs = new Map<string, { tx: Transaction; firstSeenMs: number }>();
+const PENDING_TX_TTL_MS = 10 * 60 * 1000;
+
+function sweepPendingTxs(): void {
+  if (pendingTxs.size === 0) return;
+  const now = Date.now();
+  for (const [txid, entry] of pendingTxs) {
+    if (now - entry.firstSeenMs > PENDING_TX_TTL_MS) pendingTxs.delete(txid);
+  }
+}
+
 // --- Pool + typed message builders ---
 
 const messages = new Messages({ network: NETWORK } as any);
@@ -476,15 +724,39 @@ function isPagingReply(peer: Peer, blockCount: number): boolean {
   return peer === awaitingPageFrom && (blockCount >= 2 || nearTip);
 }
 
+// SPV gate for getblocks paging. Every inv hash must already be in
+// hashToHeight (populated only by PoW-verified processHeaders) and sit at
+// the next expected height; on the first mismatch we stop so the scan only
+// ever touches blocks we validated ourselves. scanLocatorHash/Height
+// advance over the validated prefix, so the next getblocks resumes from
+// the last good position rather than stalling on one bad entry.
 function queuePagingBlocks(blockItems: Array<{ type: number; hash: Uint8Array }>): number {
-  let h = scanLocatorHeight;
+  let expected = scanLocatorHeight + 1;
+  let lastHash: string | null = null;
+  let queued = 0;
+
   for (const item of blockItems) {
-    h++;
-    hashToHeight.set(bytesToHexReversed(item.hash), h);
+    const hash = bytesToHexReversed(item.hash);
+    const known = hashToHeight.get(hash);
+    if (known === undefined) {
+      console.warn(`[spv] paging peer returned unverified block ${hash.slice(0, 16)}… near height=${expected} — truncating`);
+      break;
+    }
+    if (known !== expected) {
+      console.warn(`[spv] paging out-of-order: expected height=${expected} got=${known} (${hash.slice(0, 16)}…) — truncating`);
+      break;
+    }
     pendingBlocks.push(item.hash);
+    lastHash = hash;
+    expected++;
+    queued++;
   }
-  scanLocatorHeight = h;
-  return blockItems.length;
+
+  if (queued > 0) {
+    scanLocatorHeight = expected - 1;
+    scanLocatorHash = lastHash;
+  }
+  return queued;
 }
 
 function queueAnnouncedBlocks(blockItems: Array<{ type: number; hash: Uint8Array }>): number {
@@ -498,23 +770,29 @@ function queueAnnouncedBlocks(blockItems: Array<{ type: number; hash: Uint8Array
   return queued;
 }
 
-function continuePaging(peer: Peer, blockItems: Array<{ type: number; hash: Uint8Array }>): void {
+function continuePaging(peer: Peer, queued: number): void {
   awaitingPageFrom = null;
-  if (scanLocatorHeight < chainTipHeight) {
-    if (blockItems.length === 0) {
-      console.warn(`[scan] peer ${peer.host} returned 0 blocks at height=${scanLocatorHeight}, retrying with another peer`);
-      const fallback = [...readyPeers].find(p => p !== peer) ?? peer;
-      if (fallback !== peer) requestBlockBatch(fallback, scanLocatorHash!);
-      return;
-    }
-    const nextLocator = bytesToHexReversed(blockItems[blockItems.length - 1]!.hash);
-    const leader = pickPagingPeer() ?? peer;
-    requestBlockBatch(leader, nextLocator);
-  } else {
+
+  if (scanLocatorHeight >= chainTipHeight) {
     pagingDone = true;
     console.log(`${phaseLabel()} all blocks queued  pending=${pendingBlocks.length}  at-height=${scanLocatorHeight}`);
     checkScanDone();
+    return;
   }
+
+  // Nothing usable came back — empty inv, or every hash failed the SPV
+  // gate. Try another peer from the same locator; if this is our only
+  // peer, wait for peerready/peerdisconnect to re-drive the scan.
+  if (queued === 0) {
+    console.warn(`[scan] peer ${peer.host} returned no usable paging data at height=${scanLocatorHeight}, retrying`);
+    const fallback = [...readyPeers].find(p => p !== peer);
+    if (fallback) requestBlockBatch(fallback, scanLocatorHash!);
+    return;
+  }
+
+  // queuePagingBlocks advanced scanLocatorHash to the last validated hash.
+  const leader = pickPagingPeer() ?? peer;
+  requestBlockBatch(leader, scanLocatorHash!);
 }
 
 // --- Event handlers ---
@@ -550,7 +828,15 @@ pool.on('peerheaders', (peer: Peer, message: Message & { headers: Uint8Array[] }
       if (rawHeaders[0]!.length < 80) return;
       if (rawPrevHash(rawHeaders[0]!) !== chainTipHash) return;
     }
-    processHeaders(rawHeaders);
+    if (processHeaders(rawHeaders) && chainTipHash !== chainTipHash) {
+      // Ask this peer for filtered blocks so merkleblocks flow, which
+      // populates peerMerkleCtx and drains pendingTxs.
+      const items = rawHeaders.map(raw => ({
+        type: Inventory.TYPE.FILTERED_BLOCK,
+        hash: hexToBytes(hashHeaderRaw(raw)).reverse(),
+      }));
+      if (items.length > 0) peer.sendMessage(M.GetData(items));
+    }
     return;
   }
 
@@ -611,18 +897,29 @@ pool.on('peerinv', (peer: Peer, message: Message & { inventory: Array<{ type: nu
   const isPaging = isPagingReply(peer, blockItems.length);
   const queued = isPaging ? queuePagingBlocks(blockItems) : queueAnnouncedBlocks(blockItems);
   if (queued > 0) drainToIdlePeers();
-  if (isPaging) continuePaging(peer, blockItems);
+  if (isPaging) continuePaging(peer, queued);
 });
 
 pool.on('peermerkleblock', (peer: Peer, message: Message & { merkleBlock: MerkleBlock }) => {
   const mb = message.merkleBlock;
   const blockHash = mb.blockHeader.hash();
 
+  // Consume the scheduler slot (if any). `req` is null for late arrivals
+  // — i.e. we already requeued this hash because the original peer
+  // stalled, and some peer (possibly this one, possibly not) has just
+  // responded. We still do the merkle verification and apply matches,
+  // but we skip bookkeeping so we don't under-count outstanding or
+  // double-credit blocksScanned.
+  const req = removeInFlight(blockHash);
+  const late = req === null;
+
   const height = hashToHeight.get(blockHash);
   if (height === undefined) {
     console.warn(`[spv] merkleblock for unknown block ${blockHash.slice(0, 16)}… from ${peer.host} — rejecting`);
-    decOutstanding(peer);
-    maybeRefill(peer);
+    if (!late) {
+      maybeRefill(peer);
+      checkScanDone();
+    }
     return;
   }
 
@@ -632,31 +929,35 @@ pool.on('peermerkleblock', (peer: Peer, message: Message & { merkleBlock: Merkle
     mb.merkleTree.extractMatches(matches, indexes);
   } catch (e) {
     console.warn(`[spv] merkleRoot mismatch at height=${height}: ${(e as Error).message}`);
-    decOutstanding(peer);
+    if (!late) checkScanDone();
     return;
   }
 
-  peerMerkleCtx.set(peer, {
-    blockHash, height,
-    matches: new Set(matches.map(m => bytesToHexReversed(hexToBytes(m)).toLowerCase())),
-  });
+  const matchSet = new Set(matches.map(m => bytesToHexReversed(hexToBytes(m)).toLowerCase()));
+  peerMerkleCtx.set(peer, { blockHash, height, matches: matchSet });
 
-  blocksScanned++;
-  if (blocksScanned % 100 === 0) {
-    let total = 0;
-    for (const n of peerOutstanding.values()) total += n;
-    console.log(`${phaseLabel()} ${blocksScanned} blocks verified  pending=${pendingBlocks.length}  in-flight=${total}  peers=${readyPeers.size}`);
+  if (pendingTxs.size > 0 && matchSet.size > 0) {
+    for (const txid of matchSet) {
+      const stashed = pendingTxs.get(txid);
+      if (!stashed) continue;
+      pendingTxs.delete(txid);
+      applyTransaction(stashed.tx, height);
+    }
+    sweepPendingTxs();
   }
 
   if (matches.length > 0) {
     console.log(`${phaseLabel()} block ${blockHash.slice(0, 16)}… (h=${height})  matched ${matches.length} tx(s)`);
   }
 
-  decOutstanding(peer);
-  const list = peerInFlight.get(peer);
-  if (list && list.length) {
-    const idx = list.findIndex(h => bytesToHexReversed(h) === blockHash);
-    if (idx >= 0) list.splice(idx, 1);
+  if (late) return;  // tx application was idempotent; skip the scheduler book-keeping.
+
+  // Successful response resets the peer's stall strikes.
+  if (peerStallCount.get(peer)) peerStallCount.set(peer, 0);
+
+  blocksScanned++;
+  if (blocksScanned % 100 === 0) {
+    console.log(`${phaseLabel()} ${blocksScanned} blocks verified  pending=${pendingBlocks.length}  in-flight=${inFlightRequests.size}  peers=${readyPeers.size}`);
   }
 
   maybeRefill(peer);
@@ -672,17 +973,25 @@ pool.on('peermerkleblock', (peer: Peer, message: Message & { merkleBlock: Merkle
 pool.on('peertx', (peer: Peer, message: Message & { transaction: Transaction }) => {
   const tx = message.transaction;
   const txid = tx.hash().toLowerCase();
+  const ctx = peerMerkleCtx.get(peer);
 
-  if (phase === 'birthday-scan') {
-    const ctx = peerMerkleCtx.get(peer);
-    if (!ctx || !ctx.matches.has(txid)) {
-      console.warn(`[spv] tx ${txid.slice(0, 16)}… from ${peer.host} not in merkleblock matches — rejecting`);
-      return;
-    }
+  if (ctx && ctx.matches.has(txid)) {
     applyTransaction(tx, ctx.height);
     return;
   }
-  applyTransaction(tx, chainTipHeight + 1);
+
+  if (phase === 'birthday-scan') {
+    console.warn(`[spv] tx ${txid.slice(0, 16)}… from ${peer.host} not in merkleblock matches — rejecting`);
+    return;
+  }
+
+  // Live phase: a tx may arrive before its merkleblock. Park it keyed by
+  // txid and drain when a merkleblock whose verified matches include
+  // this txid lands. Unverified floating txs are never applied.
+  if (!pendingTxs.has(txid)) {
+    pendingTxs.set(txid, { tx, firstSeenMs: Date.now() });
+  }
+  sweepPendingTxs();
 });
 
 const seenISLocks = new Set<string>();
@@ -708,12 +1017,20 @@ pool.on('seederror', (err: Error) => console.error('[pool] seed error:', err.mes
 
 pool.on('peerdisconnect', (peer: Peer) => {
   readyPeers.delete(peer);
-  peerOutstanding.delete(peer);
   peerMerkleCtx.delete(peer);
+  peerStallCount.delete(peer);
+  peerCooldownUntilMs.delete(peer);
 
-  const list = peerInFlight.get(peer);
-  if (list && list.length) for (const h of list) pendingBlocks.push(h);
-  peerInFlight.delete(peer);
+  // Requeue every in-flight request owned by this peer.
+  const orphanedHashes: string[] = [];
+  for (const [hashHex, req] of inFlightRequests) {
+    if (req.peer === peer) orphanedHashes.push(hashHex);
+  }
+  for (const hashHex of orphanedHashes) {
+    const req = removeInFlight(hashHex);
+    if (req) pendingBlocks.push(req.hashBytes);
+  }
+  peerOutstandingCount.delete(peer);
 
   const wasLeader = pagingPeer === peer;
   if (wasLeader) pagingPeer = null;
@@ -742,7 +1059,7 @@ pool.on('peerdisconnect', (peer: Peer) => {
 
 // --- Connect ---
 
-console.log(`Connecting to Dash ${NETWORK} (SPV-verified, rev2 outpoint-aware filter)…`);
+console.log(`Connecting to Dash ${NETWORK} (SPV-verified, outpoint-aware filter)…`);
 pool.connect();
 
 process.on('SIGINT', () => {
