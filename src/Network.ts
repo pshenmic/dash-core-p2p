@@ -26,8 +26,8 @@ const testnet: Network = {
   networkMagic: hexToBytes('cee2caff'),
   dnsSeeds: [
     // 'testnet-seed.darkcoin.io',
-    // 'testnet-seed.dashdot.io',
-    'test.dnsseed.masternode.io',
+    'testnet-seed.dashdot.io',
+    // 'test.dnsseed.masternode.io',
   ],
 };
 
