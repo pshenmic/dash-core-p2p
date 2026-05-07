@@ -27,6 +27,7 @@ const testnet: Network = {
   dnsSeeds: [
     // 'testnet-seed.darkcoin.io',
     'testnet-seed.dashdot.io',
+    'seed-1.pshenmic.dev',
     // 'test.dnsseed.masternode.io',
   ],
 };

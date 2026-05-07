@@ -73,10 +73,10 @@ const INITIAL_TIP_HASH = '000000fa4225fa022d4216eabb176848d61d03027df12e0685f82d
 const INITIAL_TIP_HEIGHT = 1450000;
 
 const FILTER_TYPE = 0;                      // basic filter (BIP 158)
-const CFILTER_BATCH = 500;                  // <= 1000 per spec
-const HEADER_RACE_PEERS = 6;                // racers per header round
+const CFILTER_BATCH = 800;                  // <= 1000 per spec
+const HEADER_RACE_PEERS = 12;                // racers per header round
 const HEADER_SYNC_TIMEOUT_MS = 30_000;
-const CFCHECKPT_RACE_PEERS = 3;             // racers per cfcheckpt round
+const CFCHECKPT_RACE_PEERS = 12;             // racers per cfcheckpt round
 // Test-only: drop these hosts on connect so we can reproduce the freeze case.
 const BANNED_HOSTS: ReadonlySet<string> = new Set([
   // '185.187.169.193',
@@ -167,7 +167,8 @@ let phase: Phase = 'headers';
 
 const messages = new Messages({network: NETWORK} as any);
 const M = messages as any;
-const pool = new Pool({network: NETWORK, maxSize: 256, relay: false, messages});
+const pool = new Pool({
+  network: NETWORK, maxSize: 256, relay: false, messages, dnsSeed: true});
 
 let leader: Peer | null = null;          // cfilters phase only
 
