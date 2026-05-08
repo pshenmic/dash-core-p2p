@@ -17,8 +17,9 @@ const testnet = {
     networkMagic: hexToBytes('cee2caff'),
     dnsSeeds: [
         // 'testnet-seed.darkcoin.io',
-        // 'testnet-seed.dashdot.io',
-        'test.dnsseed.masternode.io',
+        'testnet-seed.dashdot.io',
+        'seed-1.pshenmic.dev',
+        // 'test.dnsseed.masternode.io',
     ],
 };
 const networksByName = {

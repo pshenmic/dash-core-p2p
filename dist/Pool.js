@@ -8,6 +8,55 @@ function now() {
     return Math.floor(Date.now() / 1000);
 }
 /**
+ * Parse a peer address string into AddrInfo.
+ *
+ * Accepted forms:
+ *   "1.2.3.4"               IPv4, default port
+ *   "1.2.3.4:9999"          IPv4 with port
+ *   "host.example.com"      hostname (treated as v4 host string)
+ *   "[2001:db8::1]"         bracketed IPv6, default port
+ *   "[2001:db8::1]:19999"   bracketed IPv6 with port
+ *   "2001:db8::1"           bare IPv6 (no port; detected by >1 colons)
+ */
+function parsePeerAddr(input) {
+    const trimmed = input.trim();
+    if (!trimmed)
+        throw new Error(`Invalid peer address: ${JSON.stringify(input)}`);
+    if (trimmed.startsWith('[')) {
+        const end = trimmed.indexOf(']');
+        if (end === -1)
+            throw new Error(`Invalid peer address: ${input}`);
+        const v6 = trimmed.slice(1, end);
+        const rest = trimmed.slice(end + 1);
+        const addr = { ip: { v6 } };
+        if (rest.startsWith(':')) {
+            const port = Number(rest.slice(1));
+            if (!Number.isInteger(port) || port <= 0 || port > 0xffff) {
+                throw new Error(`Invalid peer port: ${input}`);
+            }
+            addr.port = port;
+        }
+        else if (rest.length > 0) {
+            throw new Error(`Invalid peer address: ${input}`);
+        }
+        return addr;
+    }
+    const colons = (trimmed.match(/:/g) ?? []).length;
+    if (colons > 1) {
+        return { ip: { v6: trimmed } };
+    }
+    if (colons === 1) {
+        const idx = trimmed.indexOf(':');
+        const host = trimmed.slice(0, idx);
+        const port = Number(trimmed.slice(idx + 1));
+        if (!host || !Number.isInteger(port) || port <= 0 || port > 0xffff) {
+            throw new Error(`Invalid peer address: ${input}`);
+        }
+        return { ip: { v4: host }, port };
+    }
+    return { ip: { v4: trimmed } };
+}
+/**
  * A pool of peer connections to the Dash P2P network.
  * Manages multiple peer connections, DNS seed discovery, and automatic reconnection.
  *
@@ -49,9 +98,9 @@ export class Pool extends EventEmitter {
         this.messages = opts.messages;
         this.network = Networks.get(opts.network) ?? Networks.defaultNetwork;
         this.relay = opts.relay !== false;
-        if (opts.addrs) {
-            for (const addr of opts.addrs) {
-                this._addAddr(addr);
+        if (opts.peers) {
+            for (const peer of opts.peers) {
+                this._addAddr(parsePeerAddr(peer));
             }
         }
         if (this.listenAddr) {
@@ -90,7 +139,9 @@ export class Pool extends EventEmitter {
         if (this.dnsSeed) {
             this._addAddrsFromSeeds();
         }
-        else {
+        // Fill from any addrs already known (custom peers, opts.addrs).
+        // DNS seed results, when enabled, kick another fill via the 'seed' event.
+        if (this._addrs.length > 0) {
             this._fillConnections();
         }
         return this;

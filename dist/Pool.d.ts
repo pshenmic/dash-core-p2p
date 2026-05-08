@@ -20,7 +20,14 @@ export interface PoolOptions {
     relay?: boolean;
     maxSize?: number;
     messages?: Messages;
-    addrs?: AddrInfo[];
+    /**
+     * Custom peer addresses to seed the pool with. Accepted forms:
+     * "1.2.3.4", "1.2.3.4:9999", "host.example.com",
+     * "[2001:db8::1]", "[2001:db8::1]:19999", "2001:db8::1".
+     * Port defaults to the network's default when omitted.
+     * These augment DNS seeds and are tried first.
+     */
+    peers?: string[];
 }
 /**
  * A pool of peer connections to the Dash P2P network.
