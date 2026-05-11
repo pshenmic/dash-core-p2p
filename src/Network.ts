@@ -25,9 +25,10 @@ const testnet: Network = {
   port: 19999,
   networkMagic: hexToBytes('cee2caff'),
   dnsSeeds: [
-    'testnet-seed.darkcoin.io',
+    // 'testnet-seed.darkcoin.io',
     'testnet-seed.dashdot.io',
-    'test.dnsseed.masternode.io',
+    'seed-1.pshenmic.dev',
+    // 'test.dnsseed.masternode.io',
   ],
 };
 

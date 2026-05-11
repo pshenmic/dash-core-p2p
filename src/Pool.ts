@@ -12,6 +12,55 @@ function now(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+/**
+ * Parse a peer address string into AddrInfo.
+ *
+ * Accepted forms:
+ *   "1.2.3.4"               IPv4, default port
+ *   "1.2.3.4:9999"          IPv4 with port
+ *   "host.example.com"      hostname (treated as v4 host string)
+ *   "[2001:db8::1]"         bracketed IPv6, default port
+ *   "[2001:db8::1]:19999"   bracketed IPv6 with port
+ *   "2001:db8::1"           bare IPv6 (no port; detected by >1 colons)
+ */
+function parsePeerAddr(input: string): AddrInfo {
+  const trimmed = input.trim();
+  if (!trimmed) throw new Error(`Invalid peer address: ${JSON.stringify(input)}`);
+
+  if (trimmed.startsWith('[')) {
+    const end = trimmed.indexOf(']');
+    if (end === -1) throw new Error(`Invalid peer address: ${input}`);
+    const v6 = trimmed.slice(1, end);
+    const rest = trimmed.slice(end + 1);
+    const addr: AddrInfo = { ip: { v6 } };
+    if (rest.startsWith(':')) {
+      const port = Number(rest.slice(1));
+      if (!Number.isInteger(port) || port <= 0 || port > 0xffff) {
+        throw new Error(`Invalid peer port: ${input}`);
+      }
+      addr.port = port;
+    } else if (rest.length > 0) {
+      throw new Error(`Invalid peer address: ${input}`);
+    }
+    return addr;
+  }
+
+  const colons = (trimmed.match(/:/g) ?? []).length;
+  if (colons > 1) {
+    return { ip: { v6: trimmed } };
+  }
+  if (colons === 1) {
+    const idx = trimmed.indexOf(':');
+    const host = trimmed.slice(0, idx);
+    const port = Number(trimmed.slice(idx + 1));
+    if (!host || !Number.isInteger(port) || port <= 0 || port > 0xffff) {
+      throw new Error(`Invalid peer address: ${input}`);
+    }
+    return { ip: { v4: host }, port };
+  }
+  return { ip: { v4: trimmed } };
+}
+
 export interface AddrInfo {
   ip: { v4?: string; v6?: string };
   port?: number;
@@ -27,7 +76,14 @@ export interface PoolOptions {
   relay?: boolean;
   maxSize?: number;
   messages?: Messages;
-  addrs?: AddrInfo[];
+  /**
+   * Custom peer addresses to seed the pool with. Accepted forms:
+   * "1.2.3.4", "1.2.3.4:9999", "host.example.com",
+   * "[2001:db8::1]", "[2001:db8::1]:19999", "2001:db8::1".
+   * Port defaults to the network's default when omitted.
+   * These augment DNS seeds and are tried first.
+   */
+  peers?: string[];
 }
 
 /**
@@ -51,6 +107,7 @@ export class Pool extends EventEmitter {
     'getaddr', 'verack', 'reject', 'alert', 'headers', 'block', 'merkleblock',
     'tx', 'getblocks', 'getheaders', 'error', 'filterload', 'filteradd',
     'filterclear', 'getmnlistdiff', 'mnlistdiff', 'islock', 'clsig',
+    'getcfilters', 'cfilter', 'getcfheaders', 'cfheaders', 'getcfcheckpt', 'cfcheckpt',
   ];
 
   keepalive: boolean = false;
@@ -76,9 +133,9 @@ export class Pool extends EventEmitter {
     this.network = Networks.get(opts.network as string) ?? Networks.defaultNetwork;
     this.relay = opts.relay !== false;
 
-    if (opts.addrs) {
-      for (const addr of opts.addrs) {
-        this._addAddr(addr);
+    if (opts.peers) {
+      for (const peer of opts.peers) {
+        this._addAddr(parsePeerAddr(peer));
       }
     }
 
@@ -120,7 +177,10 @@ export class Pool extends EventEmitter {
     this.keepalive = true;
     if (this.dnsSeed) {
       this._addAddrsFromSeeds();
-    } else {
+    }
+    // Fill from any addrs already known (custom peers, opts.addrs).
+    // DNS seed results, when enabled, kick another fill via the 'seed' event.
+    if (this._addrs.length > 0) {
       this._fillConnections();
     }
     return this;
