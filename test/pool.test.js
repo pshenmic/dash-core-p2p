@@ -78,13 +78,13 @@ describe('Pool', function () {
     count.should.equal(1);
   });
 
-  it('can add addrs via options', function () {
+  it('can add peers via options', function () {
     const pool = new Pool({
-      addrs: [
-        { ip: { v4: '127.0.0.1', v6: '0000:0000:0000:0000:0000:0000:0000:0001' }, port: 9999 },
-      ],
+      peers: ['127.0.0.1:9999', '[::1]:9999'],
     });
-    pool._addrs.length.should.equal(1);
+    pool._addrs.length.should.equal(2);
+    pool._addrs.some((a) => a.ip.v4 === '127.0.0.1' && a.port === 9999).should.equal(true);
+    pool._addrs.some((a) => a.ip.v6 === '::1' && a.port === 9999).should.equal(true);
   });
 
   it('#sendMessage broadcasts to all connected peers', function () {

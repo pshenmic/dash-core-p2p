@@ -1,6 +1,6 @@
 import { Message, MessageOptions } from '../Message.js';
 import { Transaction } from 'dash-core-sdk';
-import {bytesToHex} from "../../utils/binary";
+import {bytesToHex} from "../../utils/binary.js";
 
 /**
  * Transaction message for broadcasting transactions to the network.

@@ -35,6 +35,12 @@ import { AddrV2Message } from './commands/AddrV2Message.js';
 import { SendHeadersMessage } from './commands/SendHeadersMessage.js';
 import { ISLockMessage } from './commands/ISLockMessage.js';
 import { CLSigMessage } from './commands/CLSigMessage.js';
+import { GetCFiltersMessage } from './commands/GetCFiltersMessage.js';
+import { CFilterMessage } from './commands/CFilterMessage.js';
+import { GetCFHeadersMessage } from './commands/GetCFHeadersMessage.js';
+import { CFHeadersMessage } from './commands/CFHeadersMessage.js';
+import { GetCFCheckptMessage } from './commands/GetCFCheckptMessage.js';
+import { CFCheckptMessage } from './commands/CFCheckptMessage.js';
 
 export interface BuilderOptions {
   network?: Network;
@@ -94,6 +100,12 @@ const COMMAND_MAP: Record<string, new (arg: any, options: any) => Message> = {
   sendheaders: SendHeadersMessage,
   islock: ISLockMessage,
   clsig: CLSigMessage,
+  getcfilters: GetCFiltersMessage,
+  cfilter: CFilterMessage,
+  getcfheaders: GetCFHeadersMessage,
+  cfheaders: CFHeadersMessage,
+  getcfcheckpt: GetCFCheckptMessage,
+  cfcheckpt: CFCheckptMessage,
 };
 
 export function builder(options?: BuilderOptions): Builder {
@@ -145,6 +157,12 @@ export function builder(options?: BuilderOptions): Builder {
       sendheaders: 'SendHeaders',
       islock: 'ISLock',
       clsig: 'CLSig',
+      getcfilters: 'GetCFilters',
+      cfilter: 'CFilter',
+      getcfheaders: 'GetCFHeaders',
+      cfheaders: 'CFHeaders',
+      getcfcheckpt: 'GetCFCheckpt',
+      cfcheckpt: 'CFCheckpt',
     },
     unsupportedCommands: [
       'qsendrecsigs',
