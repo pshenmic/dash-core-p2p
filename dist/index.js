@@ -12,6 +12,8 @@ export { ChainLockTracker } from './ChainLockTracker.js';
 export { SendAddrV2Message } from './messages/commands/SendAddrV2Message.js';
 export { AddrV2Message, NetworkID } from './messages/commands/AddrV2Message.js';
 export { SendHeadersMessage } from './messages/commands/SendHeadersMessage.js';
+export { FeeFilterMessage } from './messages/commands/FeeFilterMessage.js';
+export { WTxIdRelayMessage } from './messages/commands/WTxIdRelayMessage.js';
 export { ISLockMessage } from './messages/commands/ISLockMessage.js';
 export { ISDLockMessage } from './messages/commands/ISDLockMessage.js';
 export { CLSigMessage } from './messages/commands/CLSigMessage.js';
