@@ -34,6 +34,7 @@ import { SendAddrV2Message } from './commands/SendAddrV2Message.js';
 import { AddrV2Message } from './commands/AddrV2Message.js';
 import { SendHeadersMessage } from './commands/SendHeadersMessage.js';
 import { ISLockMessage } from './commands/ISLockMessage.js';
+import { ISDLockMessage } from './commands/ISDLockMessage.js';
 import { CLSigMessage } from './commands/CLSigMessage.js';
 import { GetCFiltersMessage } from './commands/GetCFiltersMessage.js';
 import { CFilterMessage } from './commands/CFilterMessage.js';
@@ -99,6 +100,7 @@ const COMMAND_MAP: Record<string, new (arg: any, options: any) => Message> = {
   addrv2: AddrV2Message,
   sendheaders: SendHeadersMessage,
   islock: ISLockMessage,
+  isdlock: ISDLockMessage,
   clsig: CLSigMessage,
   getcfilters: GetCFiltersMessage,
   cfilter: CFilterMessage,
@@ -156,6 +158,7 @@ export function builder(options?: BuilderOptions): Builder {
       addrv2: 'AddrV2',
       sendheaders: 'SendHeaders',
       islock: 'ISLock',
+      isdlock: 'ISDLock',
       clsig: 'CLSig',
       getcfilters: 'GetCFilters',
       cfilter: 'CFilter',
@@ -193,9 +196,6 @@ export function builder(options?: BuilderOptions): Builder {
       'govsync',
       'govobj',
       'govobjvote',
-      // DIP-24 deterministic InstantSend lock; payload shape differs from
-      // classic islock and we don't parse it yet. Ignore instead of crashing.
-      'isdlock',
       // Masternode/quorum DKG and auth commands — safe to ignore in an SPV
       // client that only cares about txs, blocks, and filter matches.
       'mnauth',

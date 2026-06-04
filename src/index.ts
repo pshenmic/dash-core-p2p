@@ -41,6 +41,8 @@ export type { AddrV2Entry, NetworkIDType } from './messages/commands/AddrV2Messa
 export { SendHeadersMessage } from './messages/commands/SendHeadersMessage.js';
 export { ISLockMessage } from './messages/commands/ISLockMessage.js';
 export type { ISLockArgs, Outpoint } from './messages/commands/ISLockMessage.js';
+export { ISDLockMessage } from './messages/commands/ISDLockMessage.js';
+export type { ISDLockArgs } from './messages/commands/ISDLockMessage.js';
 export { CLSigMessage } from './messages/commands/CLSigMessage.js';
 export type { CLSigArgs } from './messages/commands/CLSigMessage.js';
 
