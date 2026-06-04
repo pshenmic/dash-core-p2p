@@ -306,6 +306,51 @@ describe('Command Messages', function () {
     });
   });
 
+  describe('ISDLock', function () {
+    it('should create with default values', function () {
+      const message = messages.ISDLock();
+      message.version.should.equal(1);
+      message.inputs.should.deep.equal([]);
+      message.cycleHash.should.equal('00'.repeat(32));
+      message.sig.length.should.equal(96);
+    });
+
+    it('should serialize and deserialize correctly', function () {
+      const txid = 'ab'.repeat(32);
+      const cycleHash = 'dd'.repeat(32);
+      const sig = new Uint8Array(96).fill(0xcc);
+      const message = messages.ISDLock({
+        version: 1,
+        inputs: [{ txid: 'aa'.repeat(32), vout: 0 }, { txid: 'bb'.repeat(32), vout: 2 }],
+        txid,
+        cycleHash,
+        sig,
+      });
+      const payload = message.getPayload();
+      const parsed = messages.ISDLock.fromBytes(payload);
+      parsed.version.should.equal(1);
+      parsed.inputs.length.should.equal(2);
+      parsed.inputs[0].txid.should.equal('aa'.repeat(32));
+      parsed.inputs[0].vout.should.equal(0);
+      parsed.inputs[1].txid.should.equal('bb'.repeat(32));
+      parsed.inputs[1].vout.should.equal(2);
+      parsed.txid.should.equal(txid);
+      parsed.cycleHash.should.equal(cycleHash);
+      parsed.sig.should.deep.equal(sig);
+    });
+
+    it('should produce correct payload length', function () {
+      const message = messages.ISDLock({
+        inputs: [{ txid: '00'.repeat(32), vout: 1 }],
+        txid: '00'.repeat(32),
+        cycleHash: '00'.repeat(32),
+        sig: new Uint8Array(96),
+      });
+      // version(1) + varint(1)=1 + 1*36 + 32 + 32 + 96 = 198
+      message.getPayload().length.should.equal(198);
+    });
+  });
+
   describe('CLSig', function () {
     it('should create with default values', function () {
       const message = messages.CLSig();
