@@ -33,6 +33,8 @@ import { TXLockRequestMessage } from './commands/TXLockRequestMessage.js';
 import { SendAddrV2Message } from './commands/SendAddrV2Message.js';
 import { AddrV2Message } from './commands/AddrV2Message.js';
 import { SendHeadersMessage } from './commands/SendHeadersMessage.js';
+import { FeeFilterMessage } from './commands/FeeFilterMessage.js';
+import { WTxIdRelayMessage } from './commands/WTxIdRelayMessage.js';
 import { ISLockMessage } from './commands/ISLockMessage.js';
 import { ISDLockMessage } from './commands/ISDLockMessage.js';
 import { CLSigMessage } from './commands/CLSigMessage.js';
@@ -99,6 +101,8 @@ const COMMAND_MAP: Record<string, new (arg: any, options: any) => Message> = {
   sendaddrv2: SendAddrV2Message,
   addrv2: AddrV2Message,
   sendheaders: SendHeadersMessage,
+  feefilter: FeeFilterMessage,
+  wtxidrelay: WTxIdRelayMessage,
   islock: ISLockMessage,
   isdlock: ISDLockMessage,
   clsig: CLSigMessage,
@@ -157,6 +161,8 @@ export function builder(options?: BuilderOptions): Builder {
       sendaddrv2: 'SendAddrV2',
       addrv2: 'AddrV2',
       sendheaders: 'SendHeaders',
+      feefilter: 'FeeFilter',
+      wtxidrelay: 'WTxIdRelay',
       islock: 'ISLock',
       isdlock: 'ISDLock',
       clsig: 'CLSig',

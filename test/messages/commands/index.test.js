@@ -269,6 +269,30 @@ describe('Command Messages', function () {
     });
   });
 
+  describe('FeeFilter', function () {
+    it('should create with default fee rate', function () {
+      const message = messages.FeeFilter();
+      message.feeRate.should.equal(0n);
+      message.command.should.equal('feefilter');
+    });
+
+    it('should serialize and deserialize correctly', function () {
+      const message = messages.FeeFilter({ feeRate: 1234n });
+      const payload = message.getPayload();
+      payload.length.should.equal(8);
+      const parsed = messages.FeeFilter.fromBytes(payload);
+      parsed.feeRate.should.equal(1234n);
+    });
+  });
+
+  describe('WTxIdRelay', function () {
+    it('should create with an empty payload', function () {
+      const message = messages.WTxIdRelay();
+      message.command.should.equal('wtxidrelay');
+      message.getPayload().length.should.equal(0);
+    });
+  });
+
   describe('ISLock', function () {
     it('should create with default values', function () {
       const message = messages.ISLock();
