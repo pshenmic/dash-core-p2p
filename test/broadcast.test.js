@@ -207,6 +207,41 @@ describe('TxBroadcast', function () {
     b.close();
   });
 
+  it('fires isdlock when txid matches (wire-hex semantics)', function () {
+    const peer = fakePeer();
+    attachPeer(pool, peer);
+    const b = new TxBroadcast(pool, tx);
+    const lockSpy = sinon.spy();
+    b.on('isdlock', lockSpy);
+
+    // ISDLockMessage stores the txid as hex of WIRE bytes.
+    const wireHex = Buffer.from(b.txidWire).toString('hex');
+    const msg = { version: 1, txid: wireHex, inputs: [], cycleHash: '00'.repeat(32), sig: new Uint8Array(96) };
+    pool.emit('peerisdlock', peer, msg);
+
+    lockSpy.calledOnce.should.equal(true);
+    b.instantLocked.should.equal(true);
+
+    // Second isdlock should not re-fire.
+    pool.emit('peerisdlock', peer, msg);
+    lockSpy.calledOnce.should.equal(true);
+
+    b.close();
+  });
+
+  it('ignores isdlock for a different txid', function () {
+    const peer = fakePeer();
+    attachPeer(pool, peer);
+    const b = new TxBroadcast(pool, tx);
+    const lockSpy = sinon.spy();
+    b.on('isdlock', lockSpy);
+    pool.emit('peerisdlock', peer, {
+      version: 1, txid: 'ff'.repeat(32), inputs: [], cycleHash: '00'.repeat(32), sig: new Uint8Array(96),
+    });
+    lockSpy.called.should.equal(false);
+    b.close();
+  });
+
   it('fires reject when message="tx" and data txid matches', function () {
     const peer = fakePeer();
     attachPeer(pool, peer);

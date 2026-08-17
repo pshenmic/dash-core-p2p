@@ -8,6 +8,7 @@ import { hexToBytes, bytesToHex, reverseBytes, bytesEqual } from './utils/binary
 import type { Message } from './messages/Message.js';
 import type { InventoryItem } from './messages/commands/InvMessage.js';
 import type { ISLockArgs } from './messages/commands/ISLockMessage.js';
+import type { ISDLockArgs } from './messages/commands/ISDLockMessage.js';
 
 /**
  * Maximum standard transaction size accepted by Dash/Bitcoin Core nodes for
@@ -92,6 +93,11 @@ export function validateTransactionForBroadcast(
  *                                   (relay confirmation; only fires when WE
  *                                   sent the version handshake with fRelay=1
  *                                   so peers will push mempool inv to us)
+ *   - `isdlock`    (msg)            DIP-24 deterministic InstantSend lock for
+ *                                   our tx arrived. This is the modern IS
+ *                                   confirmation signal on current Dash Core
+ *                                   (master/develop emit `isdlock` only).
+ *                                   Also sets `instantLocked`.
  *   - `islock`     (msg)            DIP-10 legacy InstantSend lock arrived.
  *                                   NOTE: removed from current Dash Core
  *                                   (master/develop have no NetMsgType::ISLOCK
@@ -99,8 +105,7 @@ export function validateTransactionForBroadcast(
  *                                   `isdlock` only). This event is kept for
  *                                   compatibility with older peers but will
  *                                   not fire from up-to-date mainnet nodes.
- *                                   For modern IS confirmation, parse `isdlock`
- *                                   (DIP-24) — see Builder.unsupportedCommands.
+ *                                   Prefer `isdlock` for modern networks.
  *   - `reject`     (info)           peer sent `reject` for our tx (BIP 61).
  *                                   NOTE: BIP 61 was removed from Dash Core
  *                                   (no NetMsgType::REJECT in current source).
@@ -137,7 +142,7 @@ export class TxBroadcast extends EventEmitter {
    * mempool inv to us.
    */
   readonly propagatedFrom: Set<Peer> = new Set();
-  /** True once a matching `islock` has been received. */
+  /** True once a matching `isdlock` (or legacy `islock`) has been received. */
   instantLocked: boolean = false;
   /** Every `reject` message we observed for this tx (one per peer). */
   readonly rejections: RejectInfo[] = [];
@@ -301,6 +306,17 @@ export class TxBroadcast extends EventEmitter {
       this.emit('islock', msg);
     };
 
+    const onIsdlock = (_peer: Peer, msg: Message & ISDLockArgs) => {
+      // ISDLockMessage.txid is hex of wire bytes (internal byte order), same
+      // convention as the legacy islock — compare against our wire-hex txid.
+      const txidHex = (msg as { txid?: string }).txid;
+      if (!txidHex) return;
+      if (txidHex.toLowerCase() !== this._txidWireHex) return;
+      if (this.instantLocked) return;
+      this.instantLocked = true;
+      this.emit('isdlock', msg);
+    };
+
     const onReject = (
       peer: Peer,
       msg: Message & { message?: string; ccode?: number; reason?: string; data?: Uint8Array },
@@ -322,6 +338,7 @@ export class TxBroadcast extends EventEmitter {
     this._bind('peergetdata', onGetData);
     this._bind('peerinv', onInv);
     this._bind('peerislock', onIslock);
+    this._bind('peerisdlock', onIsdlock);
     this._bind('peerreject', onReject);
   }
 

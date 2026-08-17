@@ -1,5 +1,5 @@
 import EventEmitter from 'eventemitter3';
-import { Peer, type PeerOptions, type TCPSocket } from './Peer.js';
+import { Peer, type TCPSocket } from './Peer.js';
 import { Messages } from './messages/Messages.js';
 import { Networks, type Network } from './Network.js';
 import { strToBytes, bytesToHex } from './utils/binary.js';
@@ -106,7 +106,7 @@ export class Pool extends EventEmitter {
     'version', 'inv', 'getdata', 'ping', 'pong', 'addr',
     'getaddr', 'verack', 'reject', 'alert', 'headers', 'block', 'merkleblock',
     'tx', 'getblocks', 'getheaders', 'error', 'filterload', 'filteradd',
-    'filterclear', 'getmnlistdiff', 'mnlistdiff', 'islock', 'clsig',
+    'filterclear', 'getmnlistdiff', 'mnlistdiff', 'islock', 'isdlock', 'clsig',
     'getcfilters', 'cfilter', 'getcfheaders', 'cfheaders', 'getcfcheckpt', 'cfcheckpt',
   ];
 

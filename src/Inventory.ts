@@ -62,6 +62,10 @@ export class Inventory {
     return Inventory.forItem(InventoryType.ISLOCK, hash);
   }
 
+  static forISDLock(hash: Uint8Array | string): Inventory {
+    return Inventory.forItem(InventoryType.ISDLOCK, hash);
+  }
+
   static forCLSig(hash: Uint8Array | string): Inventory {
     return Inventory.forItem(InventoryType.CLSIG, hash);
   }
