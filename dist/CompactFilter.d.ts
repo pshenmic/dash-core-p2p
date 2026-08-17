@@ -17,7 +17,9 @@ export declare class CompactFilter {
     readonly k0: bigint;
     readonly k1: bigint;
     readonly F: bigint;
+    private customSipHash;
     constructor(filter: Uint8Array, blockHashWire: Uint8Array, P?: number, M?: bigint);
+    setCustomSipHash(fn: ((k0: bigint, k1: bigint, data: Uint8Array) => bigint) | undefined): void;
     private hashItem;
     match(item: Uint8Array): boolean;
     matchAny(items: Uint8Array[]): boolean;

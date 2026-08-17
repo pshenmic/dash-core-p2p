@@ -99,6 +99,7 @@ export class CompactFilter {
     k0;
     k1;
     F;
+    customSipHash;
     constructor(filter, blockHashWire, P = GCS_P, M = GCS_M) {
         const { k0, k1 } = deriveFilterKey(blockHashWire);
         this.k0 = k0;
@@ -108,10 +109,13 @@ export class CompactFilter {
         this.values = values;
         this.F = BigInt(N) * M;
     }
+    setCustomSipHash(fn) {
+        this.customSipHash = fn;
+    }
     hashItem(item) {
         if (this.N === 0)
             return 0n;
-        return (siphash24(this.k0, this.k1, item) * this.F) >> 64n;
+        return ((this.customSipHash ?? siphash24)(this.k0, this.k1, item) * this.F) >> 64n;
     }
     // O(log N). Use matchAny for batches.
     match(item) {
