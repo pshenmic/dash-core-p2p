@@ -106,6 +106,7 @@ export class CompactFilter {
   readonly k0: bigint;
   readonly k1: bigint;
   readonly F: bigint;
+  private customSipHash: ((k0: bigint, k1: bigint, data: Uint8Array) => bigint) | undefined;
 
   constructor(filter: Uint8Array, blockHashWire: Uint8Array, P = GCS_P, M = GCS_M) {
     const { k0, k1 } = deriveFilterKey(blockHashWire);
@@ -117,9 +118,13 @@ export class CompactFilter {
     this.F = BigInt(N) * M;
   }
 
+  setCustomSipHash(fn: ((k0: bigint, k1: bigint, data: Uint8Array) => bigint) | undefined) {
+    this.customSipHash = fn;
+  }
+
   private hashItem(item: Uint8Array): bigint {
     if (this.N === 0) return 0n;
-    return (siphash24(this.k0, this.k1, item) * this.F) >> 64n;
+    return ((this.customSipHash??siphash24)(this.k0, this.k1, item) * this.F) >> 64n;
   }
 
   // O(log N). Use matchAny for batches.
