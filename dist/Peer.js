@@ -14,6 +14,8 @@ export const PeerStatus = {
  * ```typescript
  * const peer = new Peer({ host: '127.0.0.1' });
  * peer.on('tx', (tx) => console.log('New transaction:', tx));
+ * // Undecodable messages are dropped and reported instead of thrown:
+ * peer.on('parseerror', (err) => console.warn(err.command, err.message));
  * await peer.connect();
  * ```
  */
@@ -157,7 +159,11 @@ export class Peer extends EventEmitter {
             if (!result)
                 break;
             this.dataBuffer = this.dataBuffer.subarray(result.consumed);
-            if (result.message) {
+            if (result.error) {
+                // Runs inside the socket 'data' handler, so never throw from here.
+                this.emit('parseerror', result.error);
+            }
+            else if (result.message) {
                 this.emit(result.message.command, result.message);
             }
         }

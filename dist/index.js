@@ -1,8 +1,8 @@
 export { Networks } from './Network.js';
 export { Inventory, InventoryType, InventoryTypeName } from './Inventory.js';
 export { BloomFilter } from './BloomFilter.js';
-export { MnListDiff } from './MnListDiff.js';
-export { Messages } from './messages/Messages.js';
+export { MnListDiff, MNLISTDIFF_MIN_PROTOCOL_VERSION, ProTxVersion, MnType, NetInfoPurpose, NetInfoType, } from './MnListDiff.js';
+export { Messages, MessageParseError } from './messages/Messages.js';
 export { Message } from './messages/Message.js';
 export { builder as messagesBuilder } from './messages/Builder.js';
 export { Peer, PeerStatus } from './Peer.js';

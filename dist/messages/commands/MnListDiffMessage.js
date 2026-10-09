@@ -5,8 +5,10 @@ import { MnListDiff } from '../../MnListDiff.js';
  */
 export class MnListDiffMessage extends Message {
     mnlistdiff;
+    protocolVersion;
     constructor(arg, options) {
         super({ ...options, command: 'mnlistdiff' });
+        this.protocolVersion = options.protocolVersion;
         if (arg != null && !(arg instanceof MnListDiff)) {
             throw new Error('An instance of MnListDiff or undefined is expected');
         }
@@ -16,7 +18,7 @@ export class MnListDiffMessage extends Message {
         if (!(payload instanceof Uint8Array) || payload.length === 0) {
             throw new Error('No data found to create MnListDiff message');
         }
-        this.mnlistdiff = MnListDiff.fromBytes(payload);
+        this.mnlistdiff = MnListDiff.fromBytes(payload, this.protocolVersion);
     }
     getPayload() {
         return this.mnlistdiff ? this.mnlistdiff.toBytes() : new Uint8Array(0);

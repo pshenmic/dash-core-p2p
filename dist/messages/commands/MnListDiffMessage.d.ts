@@ -5,6 +5,7 @@ import { MnListDiff } from '../../MnListDiff.js';
  */
 export declare class MnListDiffMessage extends Message {
     mnlistdiff: MnListDiff | undefined;
+    protocolVersion: number | undefined;
     constructor(arg: MnListDiff | undefined, options: MessageOptions);
     setPayload(payload: Uint8Array): void;
     getPayload(): Uint8Array;

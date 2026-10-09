@@ -5,6 +5,23 @@ import { Message } from './Message.js';
 import { bytesEqual, bytesToStr } from '../utils/binary.js';
 const { doubleSHA256 } = sdkUtils;
 /**
+ * A complete, checksum-valid message whose payload could not be decoded
+ * (unknown command or a parser error). The message has already been consumed.
+ */
+export class MessageParseError extends Error {
+    command;
+    payload;
+    cause;
+    constructor(command, payload, cause) {
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        super(`Failed to parse '${command}' message: ${reason}`);
+        this.name = 'MessageParseError';
+        this.command = command;
+        this.payload = payload;
+        this.cause = cause;
+    }
+}
+/**
  * A factory to build Dash protocol messages and parse incoming data.
  */
 export class Messages {
@@ -29,6 +46,8 @@ export class Messages {
      * or `undefined` if more data is needed.
      * `message` may be absent if bytes were consumed but produced no message
      * (e.g. garbage before magic, bad checksum, or unsupported command).
+     * If the message is complete but its payload can't be decoded, `error` is set
+     * and the message is skipped; this method does not throw on bad payloads.
      */
     parseBytes(buffer) {
         if (!(buffer instanceof Uint8Array))
@@ -74,8 +93,15 @@ export class Messages {
             // Bad checksum — skip this entire message
             return { consumed: magicAt + messageLength };
         }
-        const message = this._buildFromBytes(command, payload);
-        return { message: message ?? undefined, consumed: magicAt + messageLength };
+        let message;
+        try {
+            message = this._buildFromBytes(command, payload);
+        }
+        catch (e) {
+            // Copy the payload: `buffer` is typically a view into the peer's receive buffer.
+            return { error: new MessageParseError(command, payload.slice(), e), consumed: magicAt + messageLength };
+        }
+        return { message, consumed: magicAt + messageLength };
     }
     _buildFromBytes(command, payload) {
         if (!this.builderInstance.commands[command]) {

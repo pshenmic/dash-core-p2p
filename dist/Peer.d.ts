@@ -38,6 +38,8 @@ export type PeerStatusType = (typeof PeerStatus)[keyof typeof PeerStatus];
  * ```typescript
  * const peer = new Peer({ host: '127.0.0.1' });
  * peer.on('tx', (tx) => console.log('New transaction:', tx));
+ * // Undecodable messages are dropped and reported instead of thrown:
+ * peer.on('parseerror', (err) => console.warn(err.command, err.message));
  * await peer.connect();
  * ```
  */
