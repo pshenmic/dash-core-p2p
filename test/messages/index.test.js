@@ -1,6 +1,6 @@
 import chai from 'chai';
 import { createRequire } from 'module';
-import { Messages } from '../../dist/messages/Messages.js';
+import { Messages, MessageParseError } from '../../dist/messages/Messages.js';
 import { Networks } from '../../dist/index.js';
 import { hexToBytes, bytesToHex } from '../../dist/utils/binary.js';
 
@@ -58,7 +58,7 @@ describe('Messages', function () {
     const builderInstance = messages['builderInstance'];
 
     // Commands that require special handling or have large test data
-    const skipCommands = new Set(['block', 'mnlistdiff']);
+    const skipCommands = new Set(['block']);
 
     Object.keys(builderInstance.commandsMap).forEach(function (command) {
       if (skipCommands.has(command)) return;
@@ -171,6 +171,32 @@ describe('Messages', function () {
       const result = messages.parseBytes(buf);
       should.exist(result?.message);
       result.message.command.should.equal('verack');
+    });
+
+    it('reports an unrecognized command as an error instead of throwing', function () {
+      const messages = new Messages();
+      const buf = messages.Ping().toBytes();
+      buf.set(new TextEncoder().encode('foobar\0\0\0\0\0\0'), 4);
+      const result = messages.parseBytes(buf);
+      should.not.exist(result.message);
+      result.consumed.should.equal(buf.length);
+      result.error.should.be.instanceOf(MessageParseError);
+      result.error.command.should.equal('foobar');
+      result.error.message.should.match(/Unrecognized message command/);
+    });
+
+    it('reports a payload parse error instead of throwing', function () {
+      const messages = new Messages();
+      // Valid envelope and checksum, but the mnlistdiff payload is truncated
+      const payload = getPayloadBuffer(Data.mnlistdiff.message).slice(0, 100);
+      const msg = new Messages.Message({ command: 'mnlistdiff', network: messages.network });
+      msg.getPayload = () => payload;
+      const buf = msg.toBytes();
+      const result = messages.parseBytes(buf);
+      should.not.exist(result.message);
+      result.consumed.should.equal(buf.length);
+      result.error.command.should.equal('mnlistdiff');
+      result.error.payload.should.deep.equal(payload);
     });
 
     it('returns undefined for unknown but listed unsupported command', function () {
