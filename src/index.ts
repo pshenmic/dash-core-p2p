@@ -6,10 +6,25 @@ export type { InventoryObject } from './Inventory.js';
 
 export { BloomFilter } from './BloomFilter.js';
 
-export { MnListDiff } from './MnListDiff.js';
-export type { SimplifiedMNListEntry, DeletedQuorum } from './MnListDiff.js';
+export {
+  MnListDiff,
+  MNLISTDIFF_MIN_PROTOCOL_VERSION,
+  ProTxVersion,
+  MnType,
+  NetInfoPurpose,
+  NetInfoType,
+} from './MnListDiff.js';
+export type {
+  SimplifiedMNListEntry,
+  DeletedQuorum,
+  FinalCommitment,
+  QuorumCLSig,
+  NetAddress,
+  NetInfoEntry,
+  ExtNetInfo,
+} from './MnListDiff.js';
 
-export { Messages } from './messages/Messages.js';
+export { Messages, MessageParseError } from './messages/Messages.js';
 export { Message } from './messages/Message.js';
 export type { MessageOptions } from './messages/Message.js';
 export { builder as messagesBuilder } from './messages/Builder.js';

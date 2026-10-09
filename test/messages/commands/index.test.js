@@ -227,6 +227,28 @@ describe('Command Messages', function () {
       message.baseBlockHash.should.equal(baseHash);
       message.blockHash.should.equal(blockHash);
     });
+
+    it('uses the getmnlistd wire command', function () {
+      const message = messages.GetMnListDiff();
+      message.command.should.equal('getmnlistd');
+      const bytes = message.toBytes();
+      new TextDecoder().decode(bytes.subarray(4, 16)).should.equal('getmnlistd\0\0');
+    });
+
+    it('takes display-order hashes and writes them in wire order', function () {
+      const baseBlockHash = '00'.repeat(31) + 'ab';
+      const blockHash = '00000000000000019fc90c36b57bdf6a0d3d175c8d81cf11eece224c65602c53';
+      const message = messages.GetMnListDiff({ baseBlockHash, blockHash });
+      const payload = message.getPayload();
+      payload.length.should.equal(64);
+      payload[0].should.equal(0xab);
+      payload[63].should.equal(0x00);
+      payload[32].should.equal(0x53);
+
+      const parsed = messages.GetMnListDiff.fromBytes(payload);
+      parsed.baseBlockHash.should.equal(baseBlockHash);
+      parsed.blockHash.should.equal(blockHash);
+    });
   });
 
   describe('VerAck', function () {
