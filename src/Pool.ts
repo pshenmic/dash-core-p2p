@@ -106,8 +106,9 @@ export class Pool extends EventEmitter {
     'version', 'inv', 'getdata', 'ping', 'pong', 'addr',
     'getaddr', 'verack', 'reject', 'alert', 'headers', 'block', 'merkleblock',
     'tx', 'getblocks', 'getheaders', 'error', 'filterload', 'filteradd',
-    'filterclear', 'getmnlistdiff', 'mnlistdiff', 'islock', 'isdlock', 'clsig',
+    'filterclear', 'getmnlistd', 'mnlistdiff', 'islock', 'isdlock', 'clsig',
     'getcfilters', 'cfilter', 'getcfheaders', 'cfheaders', 'getcfcheckpt', 'cfcheckpt',
+    'parseerror',
   ];
 
   keepalive: boolean = false;

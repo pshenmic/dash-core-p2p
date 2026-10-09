@@ -198,6 +198,29 @@ describe('Peer', function () {
     peer.status.should.equal(PeerStatus.DISCONNECTED);
   });
 
+  it('emits parseerror for an undecodable message and keeps reading', function () {
+    const stub = createMockSocket();
+    const peer = new Peer({ host: 'localhost', socket: stub });
+
+    const bad = new Messages.Message({ command: 'mnlistdiff', network: Networks.livenet });
+    bad.getPayload = () => new Uint8Array([1, 0, 0xde, 0xad]);
+    const unknown = messages.Ping().toBytes();
+    unknown.set(new TextEncoder().encode('foobar\0\0\0\0\0\0'), 4);
+    const verack = messages.VerAck().toBytes();
+
+    const errors = [];
+    peer.on('parseerror', (err) => errors.push(err));
+    let veracks = 0;
+    peer.on('verack', () => veracks++);
+
+    const chunk = new Uint8Array([...bad.toBytes(), ...unknown, ...verack]);
+    (() => stub.emit('data', chunk)).should.not.throw();
+
+    errors.map((e) => e.command).should.deep.equal(['mnlistdiff', 'foobar']);
+    veracks.should.equal(1);
+    peer.dataBuffer.length.should.equal(0);
+  });
+
   it('uses STATUS constants', function () {
     Peer.STATUS.DISCONNECTED.should.equal('disconnected');
     Peer.STATUS.CONNECTING.should.equal('connecting');
