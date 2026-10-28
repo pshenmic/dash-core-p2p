@@ -28,6 +28,17 @@ export { Messages, MessageParseError } from './messages/Messages.js';
 export { Message } from './messages/Message.js';
 export type { MessageOptions } from './messages/Message.js';
 export { builder as messagesBuilder } from './messages/Builder.js';
+export type {
+  MessageFactory,
+  InventoryMessageFactory,
+  CommandFactories,
+  NamedMessageFactories,
+  CommandKey,
+} from './messages/Builder.js';
+
+export { GetMnListDiffMessage } from './messages/commands/GetMnListDiffMessage.js';
+export type { GetMnListDiffArgs } from './messages/commands/GetMnListDiffMessage.js';
+export { MnListDiffMessage } from './messages/commands/MnListDiffMessage.js';
 
 export { Peer, PeerStatus } from './Peer.js';
 export type { PeerOptions, TCPSocket, SocketFactory, PeerStatusType } from './Peer.js';

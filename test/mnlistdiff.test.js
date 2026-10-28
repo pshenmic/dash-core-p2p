@@ -103,6 +103,84 @@ describe('MnListDiff', function () {
       list[5].isValid = !list[5].isValid;
       MnListDiff.calcMerkleRootMNList(list).should.not.equal(diff.merkleRootMNList);
     });
+
+    it('exposes coinbaseHeight and merkleRootQuorums', function () {
+      diff.coinbaseHeight.should.equal(2552448);
+      diff.merkleRootQuorums.should.equal('ac758e0d8b586d344cb73b6985380df4a6cd849d12a3d9ccc3b31041aac1a0ee');
+    });
+
+    it('computes merkleRootQuorums matching the coinbase', function () {
+      MnListDiff.calcMerkleRootQuorums(diff.newQuorums).should.equal(diff.merkleRootQuorums);
+      // Order of the input doesn't matter: hashes are sorted.
+      MnListDiff.calcMerkleRootQuorums([...diff.newQuorums].reverse()).should.equal(diff.merkleRootQuorums);
+    });
+
+    it('merkleRootQuorums detects a modified or missing commitment', function () {
+      const quorums = diff.newQuorums.map((q) => ({ ...q }));
+      quorums[3].signers = quorums[3].signers.map((b, i) => (i === 0 ? !b : b));
+      MnListDiff.calcMerkleRootQuorums(quorums).should.not.equal(diff.merkleRootQuorums);
+      MnListDiff.calcMerkleRootQuorums(diff.newQuorums.slice(1)).should.not.equal(diff.merkleRootQuorums);
+    });
+
+    it('hashes a commitment as sha256d of its wire bytes', function () {
+      const q = diff.newQuorums[0];
+      const hash = MnListDiff.calcCommitmentHash(q);
+      hash.length.should.equal(32);
+      const changed = MnListDiff.calcCommitmentHash({ ...q, quorumSig: 'ff' + q.quorumSig.slice(2) });
+      bytesToHex(changed).should.not.equal(bytesToHex(hash));
+    });
+
+    it('rebuilds the block merkle root from the coinbase proof', function () {
+      // Header merkle root of mainnet block 2552448.
+      diff.calcBlockMerkleRoot().should.equal('f568a3d5145230f78c2e02f1fdc7359d1901c2cbded05aeaf410c3bcc2c1ca70');
+    });
+
+    describe('calcBlockMerkleRoot rejects', function () {
+      const withProof = (changes) => Object.assign(MnListDiff.fromBytes(mainnetFull), changes);
+
+      it('a tampered sibling hash (root changes)', function () {
+        const hashes = [...diff.merkleHashes];
+        hashes[1] = '00' + hashes[1].slice(2);
+        withProof({ merkleHashes: hashes }).calcBlockMerkleRoot().should.not.equal(diff.calcBlockMerkleRoot());
+      });
+
+      it('a proof for a transaction other than the coinbase', function () {
+        const hashes = [...diff.merkleHashes];
+        hashes[0] = '00' + hashes[0].slice(2);
+        should.equal(withProof({ merkleHashes: hashes }).calcBlockMerkleRoot(), null);
+      });
+
+      it('unused hashes or flag bytes', function () {
+        should.equal(withProof({ merkleHashes: [...diff.merkleHashes, diff.merkleHashes[0]] }).calcBlockMerkleRoot(), null);
+        should.equal(withProof({ merkleFlags: [...diff.merkleFlags, 0] }).calcBlockMerkleRoot(), null);
+      });
+
+      it('too few hashes or flags', function () {
+        should.equal(withProof({ merkleHashes: diff.merkleHashes.slice(0, -1) }).calcBlockMerkleRoot(), null);
+        should.equal(withProof({ merkleFlags: [] }).calcBlockMerkleRoot(), null);
+      });
+
+      it('zero or oversized totalTransactions', function () {
+        should.equal(withProof({ totalTransactions: 0 }).calcBlockMerkleRoot(), null);
+        should.equal(withProof({ totalTransactions: 1_000_000 }).calcBlockMerkleRoot(), null);
+      });
+
+      it('a match not at position 0', function () {
+        // 2 txs: root (descend) -> leaf 0 (no match) -> leaf 1 (match = coinbase)
+        const cb = bytesToHex(sha256d(diff.cbTxBytes).reverse());
+        const other = '11'.repeat(32);
+        should.equal(withProof({ totalTransactions: 2, merkleHashes: [other, cb], merkleFlags: [0b101] }).calcBlockMerkleRoot(), null);
+      });
+
+      it('a mutated tree with duplicate siblings (CVE-2012-2459)', function () {
+        // 2 txs: root (descend) -> leaf 0 (match = coinbase) -> leaf 1 (no match)
+        const cb = bytesToHex(sha256d(diff.cbTxBytes).reverse());
+        const ok = withProof({ totalTransactions: 2, merkleHashes: [cb, '11'.repeat(32)], merkleFlags: [0b011] });
+        should.not.equal(ok.calcBlockMerkleRoot(), null);
+        const mutated = withProof({ totalTransactions: 2, merkleHashes: [cb, cb], merkleFlags: [0b011] });
+        should.equal(mutated.calcBlockMerkleRoot(), null);
+      });
+    });
   });
 
   describe('testnet quorum diff', function () {

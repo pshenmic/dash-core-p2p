@@ -107,7 +107,7 @@ export class Peer extends EventEmitter {
       this.subversion = message.subversion;
       this.bestHeight = message.startHeight;
 
-      const verackResponse = (this.messages as any).VerAck();
+      const verackResponse = this.messages.VerAck();
       this.sendMessage(verackResponse);
 
       if (!this.versionSent) {
@@ -198,13 +198,13 @@ export class Peer extends EventEmitter {
   }
 
   private _sendVersion(): void {
-    const message = (this.messages as any).Version({ relay: this.relay });
+    const message = this.messages.Version({ relay: this.relay });
     this.versionSent = true;
     this.sendMessage(message);
   }
 
   private _sendPong(nonce: Uint8Array): void {
-    const message = (this.messages as any).Pong(nonce);
+    const message = this.messages.Pong(nonce);
     this.sendMessage(message);
   }
 
