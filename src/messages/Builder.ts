@@ -51,12 +51,19 @@ export interface BuilderOptions {
   [key: string]: unknown;
 }
 
-export type MessageFactory<T = unknown> = {
-  (arg?: T): Message;
-  fromBytes(bytes: Uint8Array): Message;
-  forTransaction?: (hash: Uint8Array | string) => Message;
-  forBlock?: (hash: Uint8Array | string) => Message;
-  forFilteredBlock?: (hash: Uint8Array | string) => Message;
+export type MessageFactory<T = unknown, M extends Message = Message> = {
+  (arg?: T): M;
+  fromBytes(bytes: Uint8Array): M;
+  forTransaction?: (hash: Uint8Array | string) => M;
+  forBlock?: (hash: Uint8Array | string) => M;
+  forFilteredBlock?: (hash: Uint8Array | string) => M;
+};
+
+/** Factory for an inventory command (getdata, inv, notfound). */
+export type InventoryMessageFactory<T = unknown, M extends Message = Message> = MessageFactory<T, M> & {
+  forTransaction(hash: Uint8Array | string): M;
+  forBlock(hash: Uint8Array | string): M;
+  forFilteredBlock(hash: Uint8Array | string): M;
 };
 
 export interface Builder {
@@ -67,11 +74,11 @@ export interface Builder {
   inventoryCommands: string[];
   commandsMap: Record<string, string>;
   unsupportedCommands: string[];
-  commands: Record<string, MessageFactory>;
+  commands: CommandFactories & Record<string, MessageFactory>;
   add(key: string, Command: new (arg: unknown, options: MessageOptions) => Message): void;
 }
 
-const COMMAND_MAP: Record<string, new (arg: any, options: any) => Message> = {
+const COMMAND_MAP = {
   version: VersionMessage,
   verack: VerAckMessage,
   ping: PingMessage,
@@ -112,7 +119,67 @@ const COMMAND_MAP: Record<string, new (arg: any, options: any) => Message> = {
   cfheaders: CFHeadersMessage,
   getcfcheckpt: GetCFCheckptMessage,
   cfcheckpt: CFCheckptMessage,
-};
+} satisfies Record<string, new (arg: any, options: any) => Message>;
+
+const COMMAND_NAMES = {
+  version: 'Version',
+  verack: 'VerAck',
+  ping: 'Ping',
+  pong: 'Pong',
+  block: 'Block',
+  tx: 'Transaction',
+  getdata: 'GetData',
+  getmnlistd: 'GetMnListDiff',
+  headers: 'Headers',
+  notfound: 'NotFound',
+  inv: 'Inventory',
+  addr: 'Addresses',
+  alert: 'Alert',
+  reject: 'Reject',
+  merkleblock: 'MerkleBlock',
+  mnlistdiff: 'MnListDiff',
+  filterload: 'FilterLoad',
+  filteradd: 'FilterAdd',
+  filterclear: 'FilterClear',
+  getblocks: 'GetBlocks',
+  getheaders: 'GetHeaders',
+  mempool: 'MemPool',
+  getaddr: 'GetAddr',
+  dsq: 'DSQueue',
+  ssc: 'SyncStatusCount',
+  ix: 'TXLockRequest',
+  sendaddrv2: 'SendAddrV2',
+  addrv2: 'AddrV2',
+  sendheaders: 'SendHeaders',
+  feefilter: 'FeeFilter',
+  wtxidrelay: 'WTxIdRelay',
+  islock: 'ISLock',
+  isdlock: 'ISDLock',
+  clsig: 'CLSig',
+  getcfilters: 'GetCFilters',
+  cfilter: 'CFilter',
+  getcfheaders: 'GetCFHeaders',
+  cfheaders: 'CFHeaders',
+  getcfcheckpt: 'GetCFCheckpt',
+  cfcheckpt: 'CFCheckpt',
+} as const satisfies Record<keyof typeof COMMAND_MAP, string>;
+
+const INVENTORY_COMMANDS = ['getdata', 'inv', 'notfound'] as const;
+
+type CommandMap = typeof COMMAND_MAP;
+export type CommandKey = keyof CommandMap;
+type InventoryCommandKey = (typeof INVENTORY_COMMANDS)[number];
+
+type FactoryFor<K extends CommandKey> =
+  K extends InventoryCommandKey
+    ? InventoryMessageFactory<NonNullable<ConstructorParameters<CommandMap[K]>[0]>, InstanceType<CommandMap[K]>>
+    : MessageFactory<NonNullable<ConstructorParameters<CommandMap[K]>[0]>, InstanceType<CommandMap[K]>>;
+
+/** Built-in factories keyed by wire command (`commands.getmnlistd`). */
+export type CommandFactories = { [K in CommandKey]: FactoryFor<K> };
+
+/** Built-in factories keyed by name (`messages.GetMnListDiff`). */
+export type NamedMessageFactories = { [K in CommandKey as (typeof COMMAND_NAMES)[K]]: FactoryFor<K> };
 
 export function builder(options?: BuilderOptions): Builder {
   const opts: BuilderOptions = options ?? {};
@@ -130,49 +197,8 @@ export function builder(options?: BuilderOptions): Builder {
       protocolVersion: opts.protocolVersion,
       network: opts.network,
     },
-    inventoryCommands: ['getdata', 'inv', 'notfound'],
-    commandsMap: {
-      version: 'Version',
-      verack: 'VerAck',
-      ping: 'Ping',
-      pong: 'Pong',
-      block: 'Block',
-      tx: 'Transaction',
-      getdata: 'GetData',
-      getmnlistd: 'GetMnListDiff',
-      headers: 'Headers',
-      notfound: 'NotFound',
-      inv: 'Inventory',
-      addr: 'Addresses',
-      alert: 'Alert',
-      reject: 'Reject',
-      merkleblock: 'MerkleBlock',
-      mnlistdiff: 'MnListDiff',
-      filterload: 'FilterLoad',
-      filteradd: 'FilterAdd',
-      filterclear: 'FilterClear',
-      getblocks: 'GetBlocks',
-      getheaders: 'GetHeaders',
-      mempool: 'MemPool',
-      getaddr: 'GetAddr',
-      dsq: 'DSQueue',
-      ssc: 'SyncStatusCount',
-      ix: 'TXLockRequest',
-      sendaddrv2: 'SendAddrV2',
-      addrv2: 'AddrV2',
-      sendheaders: 'SendHeaders',
-      feefilter: 'FeeFilter',
-      wtxidrelay: 'WTxIdRelay',
-      islock: 'ISLock',
-      isdlock: 'ISDLock',
-      clsig: 'CLSig',
-      getcfilters: 'GetCFilters',
-      cfilter: 'CFilter',
-      getcfheaders: 'GetCFHeaders',
-      cfheaders: 'CFHeaders',
-      getcfcheckpt: 'GetCFCheckpt',
-      cfcheckpt: 'CFCheckpt',
-    },
+    inventoryCommands: [...INVENTORY_COMMANDS],
+    commandsMap: { ...COMMAND_NAMES },
     unsupportedCommands: [
       'qsendrecsigs',
       'senddsq',
@@ -219,7 +245,7 @@ export function builder(options?: BuilderOptions): Builder {
       'qgetdata',
       'qdata',
     ],
-    commands: {},
+    commands: {} as Builder['commands'],
     add(key: string, Command: new (arg: unknown, options: MessageOptions) => Message) {
       const factory: MessageFactory = function (arg?: unknown) {
         return new Command(arg, opts as MessageOptions);
@@ -233,12 +259,12 @@ export function builder(options?: BuilderOptions): Builder {
     },
   };
 
-  for (const key of Object.keys(COMMAND_MAP)) {
-    exported.add(key, COMMAND_MAP[key]!);
+  for (const key of Object.keys(COMMAND_MAP) as CommandKey[]) {
+    exported.add(key, COMMAND_MAP[key] as new (arg: unknown, options: MessageOptions) => Message);
   }
 
-  for (const command of exported.inventoryCommands) {
-    const cmd = exported.commands[command]!;
+  for (const command of INVENTORY_COMMANDS) {
+    const cmd = (exported.commands as Record<string, MessageFactory>)[command]!;
 
     cmd.forTransaction = function forTransaction(hash) {
       return new (COMMAND_MAP[command]!)([Inventory.forTransaction(hash)], opts as MessageOptions);
