@@ -1,5 +1,5 @@
 import { type Network } from '../Network.js';
-import { builder, type BuilderOptions } from './Builder.js';
+import { builder, type BuilderOptions, type NamedMessageFactories } from './Builder.js';
 import { Message } from './Message.js';
 /**
  * A complete, checksum-valid message whose payload could not be decoded
@@ -10,6 +10,9 @@ export declare class MessageParseError extends Error {
     payload: Uint8Array;
     cause: unknown;
     constructor(command: string, payload: Uint8Array, cause: unknown);
+}
+/** Typed factories for the built-in commands, e.g. `messages.GetMnListDiff({ ... })`. */
+export interface Messages extends NamedMessageFactories {
 }
 /**
  * A factory to build Dash protocol messages and parse incoming data.

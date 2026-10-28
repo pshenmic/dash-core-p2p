@@ -1,17 +1,63 @@
 import { type Network } from '../Network.js';
 import type { MessageOptions } from './Message.js';
 import type { Message } from './Message.js';
+import { VersionMessage } from './commands/VersionMessage.js';
+import { VerAckMessage } from './commands/VerAckMessage.js';
+import { PingMessage } from './commands/PingMessage.js';
+import { PongMessage } from './commands/PongMessage.js';
+import { BlockMessage } from './commands/BlockMessage.js';
+import { TransactionMessage } from './commands/TransactionMessage.js';
+import { GetDataMessage } from './commands/GetDataMessage.js';
+import { GetMnListDiffMessage } from './commands/GetMnListDiffMessage.js';
+import { HeadersMessage } from './commands/HeadersMessage.js';
+import { NotFoundMessage } from './commands/NotFoundMessage.js';
+import { InvMessage } from './commands/InvMessage.js';
+import { AddrMessage } from './commands/AddrMessage.js';
+import { AlertMessage } from './commands/AlertMessage.js';
+import { RejectMessage } from './commands/RejectMessage.js';
+import { MerkleBlockMessage } from './commands/MerkleBlockMessage.js';
+import { MnListDiffMessage } from './commands/MnListDiffMessage.js';
+import { FilterLoadMessage } from './commands/FilterLoadMessage.js';
+import { FilterAddMessage } from './commands/FilterAddMessage.js';
+import { FilterClearMessage } from './commands/FilterClearMessage.js';
+import { GetBlocksMessage } from './commands/GetBlocksMessage.js';
+import { GetHeadersMessage } from './commands/GetHeadersMessage.js';
+import { MemPoolMessage } from './commands/MemPoolMessage.js';
+import { GetAddrMessage } from './commands/GetAddrMessage.js';
+import { DSQueueMessage } from './commands/DSQueueMessage.js';
+import { SyncStatusCountMessage } from './commands/SyncStatusCountMessage.js';
+import { TXLockRequestMessage } from './commands/TXLockRequestMessage.js';
+import { SendAddrV2Message } from './commands/SendAddrV2Message.js';
+import { AddrV2Message } from './commands/AddrV2Message.js';
+import { SendHeadersMessage } from './commands/SendHeadersMessage.js';
+import { FeeFilterMessage } from './commands/FeeFilterMessage.js';
+import { WTxIdRelayMessage } from './commands/WTxIdRelayMessage.js';
+import { ISLockMessage } from './commands/ISLockMessage.js';
+import { ISDLockMessage } from './commands/ISDLockMessage.js';
+import { CLSigMessage } from './commands/CLSigMessage.js';
+import { GetCFiltersMessage } from './commands/GetCFiltersMessage.js';
+import { CFilterMessage } from './commands/CFilterMessage.js';
+import { GetCFHeadersMessage } from './commands/GetCFHeadersMessage.js';
+import { CFHeadersMessage } from './commands/CFHeadersMessage.js';
+import { GetCFCheckptMessage } from './commands/GetCFCheckptMessage.js';
+import { CFCheckptMessage } from './commands/CFCheckptMessage.js';
 export interface BuilderOptions {
     network?: Network;
     protocolVersion?: number;
     [key: string]: unknown;
 }
-export type MessageFactory<T = unknown> = {
-    (arg?: T): Message;
-    fromBytes(bytes: Uint8Array): Message;
-    forTransaction?: (hash: Uint8Array | string) => Message;
-    forBlock?: (hash: Uint8Array | string) => Message;
-    forFilteredBlock?: (hash: Uint8Array | string) => Message;
+export type MessageFactory<T = unknown, M extends Message = Message> = {
+    (arg?: T): M;
+    fromBytes(bytes: Uint8Array): M;
+    forTransaction?: (hash: Uint8Array | string) => M;
+    forBlock?: (hash: Uint8Array | string) => M;
+    forFilteredBlock?: (hash: Uint8Array | string) => M;
+};
+/** Factory for an inventory command (getdata, inv, notfound). */
+export type InventoryMessageFactory<T = unknown, M extends Message = Message> = MessageFactory<T, M> & {
+    forTransaction(hash: Uint8Array | string): M;
+    forBlock(hash: Uint8Array | string): M;
+    forFilteredBlock(hash: Uint8Array | string): M;
 };
 export interface Builder {
     defaults: {
@@ -21,7 +67,105 @@ export interface Builder {
     inventoryCommands: string[];
     commandsMap: Record<string, string>;
     unsupportedCommands: string[];
-    commands: Record<string, MessageFactory>;
+    commands: CommandFactories & Record<string, MessageFactory>;
     add(key: string, Command: new (arg: unknown, options: MessageOptions) => Message): void;
 }
+declare const COMMAND_MAP: {
+    version: typeof VersionMessage;
+    verack: typeof VerAckMessage;
+    ping: typeof PingMessage;
+    pong: typeof PongMessage;
+    block: typeof BlockMessage;
+    tx: typeof TransactionMessage;
+    getdata: typeof GetDataMessage;
+    getmnlistd: typeof GetMnListDiffMessage;
+    headers: typeof HeadersMessage;
+    notfound: typeof NotFoundMessage;
+    inv: typeof InvMessage;
+    addr: typeof AddrMessage;
+    alert: typeof AlertMessage;
+    reject: typeof RejectMessage;
+    merkleblock: typeof MerkleBlockMessage;
+    mnlistdiff: typeof MnListDiffMessage;
+    filterload: typeof FilterLoadMessage;
+    filteradd: typeof FilterAddMessage;
+    filterclear: typeof FilterClearMessage;
+    getblocks: typeof GetBlocksMessage;
+    getheaders: typeof GetHeadersMessage;
+    mempool: typeof MemPoolMessage;
+    getaddr: typeof GetAddrMessage;
+    dsq: typeof DSQueueMessage;
+    ssc: typeof SyncStatusCountMessage;
+    ix: typeof TXLockRequestMessage;
+    sendaddrv2: typeof SendAddrV2Message;
+    addrv2: typeof AddrV2Message;
+    sendheaders: typeof SendHeadersMessage;
+    feefilter: typeof FeeFilterMessage;
+    wtxidrelay: typeof WTxIdRelayMessage;
+    islock: typeof ISLockMessage;
+    isdlock: typeof ISDLockMessage;
+    clsig: typeof CLSigMessage;
+    getcfilters: typeof GetCFiltersMessage;
+    cfilter: typeof CFilterMessage;
+    getcfheaders: typeof GetCFHeadersMessage;
+    cfheaders: typeof CFHeadersMessage;
+    getcfcheckpt: typeof GetCFCheckptMessage;
+    cfcheckpt: typeof CFCheckptMessage;
+};
+declare const COMMAND_NAMES: {
+    readonly version: "Version";
+    readonly verack: "VerAck";
+    readonly ping: "Ping";
+    readonly pong: "Pong";
+    readonly block: "Block";
+    readonly tx: "Transaction";
+    readonly getdata: "GetData";
+    readonly getmnlistd: "GetMnListDiff";
+    readonly headers: "Headers";
+    readonly notfound: "NotFound";
+    readonly inv: "Inventory";
+    readonly addr: "Addresses";
+    readonly alert: "Alert";
+    readonly reject: "Reject";
+    readonly merkleblock: "MerkleBlock";
+    readonly mnlistdiff: "MnListDiff";
+    readonly filterload: "FilterLoad";
+    readonly filteradd: "FilterAdd";
+    readonly filterclear: "FilterClear";
+    readonly getblocks: "GetBlocks";
+    readonly getheaders: "GetHeaders";
+    readonly mempool: "MemPool";
+    readonly getaddr: "GetAddr";
+    readonly dsq: "DSQueue";
+    readonly ssc: "SyncStatusCount";
+    readonly ix: "TXLockRequest";
+    readonly sendaddrv2: "SendAddrV2";
+    readonly addrv2: "AddrV2";
+    readonly sendheaders: "SendHeaders";
+    readonly feefilter: "FeeFilter";
+    readonly wtxidrelay: "WTxIdRelay";
+    readonly islock: "ISLock";
+    readonly isdlock: "ISDLock";
+    readonly clsig: "CLSig";
+    readonly getcfilters: "GetCFilters";
+    readonly cfilter: "CFilter";
+    readonly getcfheaders: "GetCFHeaders";
+    readonly cfheaders: "CFHeaders";
+    readonly getcfcheckpt: "GetCFCheckpt";
+    readonly cfcheckpt: "CFCheckpt";
+};
+declare const INVENTORY_COMMANDS: readonly ["getdata", "inv", "notfound"];
+type CommandMap = typeof COMMAND_MAP;
+export type CommandKey = keyof CommandMap;
+type InventoryCommandKey = (typeof INVENTORY_COMMANDS)[number];
+type FactoryFor<K extends CommandKey> = K extends InventoryCommandKey ? InventoryMessageFactory<NonNullable<ConstructorParameters<CommandMap[K]>[0]>, InstanceType<CommandMap[K]>> : MessageFactory<NonNullable<ConstructorParameters<CommandMap[K]>[0]>, InstanceType<CommandMap[K]>>;
+/** Built-in factories keyed by wire command (`commands.getmnlistd`). */
+export type CommandFactories = {
+    [K in CommandKey]: FactoryFor<K>;
+};
+/** Built-in factories keyed by name (`messages.GetMnListDiff`). */
+export type NamedMessageFactories = {
+    [K in CommandKey as (typeof COMMAND_NAMES)[K]]: FactoryFor<K>;
+};
 export declare function builder(options?: BuilderOptions): Builder;
+export {};

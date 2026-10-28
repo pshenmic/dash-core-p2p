@@ -5,6 +5,8 @@ export { MnListDiff, MNLISTDIFF_MIN_PROTOCOL_VERSION, ProTxVersion, MnType, NetI
 export { Messages, MessageParseError } from './messages/Messages.js';
 export { Message } from './messages/Message.js';
 export { builder as messagesBuilder } from './messages/Builder.js';
+export { GetMnListDiffMessage } from './messages/commands/GetMnListDiffMessage.js';
+export { MnListDiffMessage } from './messages/commands/MnListDiffMessage.js';
 export { Peer, PeerStatus } from './Peer.js';
 export { Pool } from './Pool.js';
 export { TxBroadcast, validateTransactionForBroadcast, MAX_STANDARD_TX_SIZE, } from './Broadcast.js';

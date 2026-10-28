@@ -120,6 +120,20 @@ export declare class MnListDiff {
     toBytes(): Uint8Array;
     /** merkleRootMNList committed in the coinbase (display order), if present. */
     get merkleRootMNList(): string | undefined;
+    /** merkleRootQuorums committed in the coinbase (display order); absent before CbTx version 2. */
+    get merkleRootQuorums(): string | undefined;
+    /** Block height committed in the coinbase, if present. */
+    get coinbaseHeight(): number | undefined;
+    /**
+     * Merkle root of the block containing `cbTx`, rebuilt from the partial
+     * merkle tree (merkleHashes / merkleFlags / totalTransactions), in display
+     * order. Compare with the block header's merkle root.
+     *
+     * Returns null if the tree is malformed, mutated (CVE-2012-2459), or does
+     * not prove exactly one match: the coinbase, at position 0.
+     * Port of Core's CPartialMerkleTree::ExtractMatches.
+     */
+    calcBlockMerkleRoot(): string | null;
     /**
      * Hash of a single entry as used in merkleRootMNList: sha256d of the entry
      * serialized without its leading nVersion (Core's SER_GETHASH). Wire order.
@@ -132,4 +146,16 @@ export declare class MnListDiff {
      * a list obtained by applying diffs.
      */
     static calcMerkleRootMNList(entries: SimplifiedMNListEntry[]): string;
+    /**
+     * Hash of a commitment as used in merkleRootQuorums: sha256d of the
+     * commitment as serialized on the wire. Wire order.
+     */
+    static calcCommitmentHash(commitment: FinalCommitment): Uint8Array;
+    /**
+     * Merkle root over all active quorum commitments, in display order.
+     * Commitment hashes are sorted by their wire bytes, as Core does. Compare
+     * with `merkleRootQuorums` on a diff from the zero base hash (whose
+     * newQuorums are all active quorums), or on a quorum list built from diffs.
+     */
+    static calcMerkleRootQuorums(commitments: FinalCommitment[]): string;
 }
