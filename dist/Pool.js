@@ -78,6 +78,7 @@ export class Pool extends EventEmitter {
         'tx', 'getblocks', 'getheaders', 'error', 'filterload', 'filteradd',
         'filterclear', 'getmnlistd', 'mnlistdiff', 'islock', 'isdlock', 'clsig',
         'getcfilters', 'cfilter', 'getcfheaders', 'cfheaders', 'getcfcheckpt', 'cfcheckpt',
+        'notfound', 'ssc', 'govsync', 'govobj', 'govobjvote',
         'parseerror',
     ];
     keepalive = false;

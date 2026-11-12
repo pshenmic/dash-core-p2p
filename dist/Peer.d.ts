@@ -2,6 +2,7 @@ import EventEmitter from 'eventemitter3';
 import { Messages } from './messages/Messages.js';
 import { type Network } from './Network.js';
 import type { Message } from './messages/Message.js';
+import type { Transaction } from 'dash-core-sdk';
 /**
  * Cross-platform TCP socket interface.
  * In Node.js, this is backed by `net.Socket`.
@@ -23,6 +24,17 @@ export interface PeerOptions {
     messages?: Messages;
     socket?: TCPSocket;
     socketFactory?: SocketFactory;
+}
+/** Answer to {@link Peer.queryTransaction}. */
+export type TxQueryResult = {
+    status: 'found';
+    tx: Transaction;
+} | {
+    status: 'notfound';
+};
+export interface TxQueryOptions {
+    /** Milliseconds to wait for tx/notfound before rejecting. Default 30000. */
+    timeout?: number;
 }
 export declare const PeerStatus: {
     readonly DISCONNECTED: "disconnected";
@@ -85,6 +97,18 @@ export declare class Peer extends EventEmitter {
      * Send a message to the peer.
      */
     sendMessage(message: Message): void;
+    /**
+     * Ask the peer for a transaction with getdata(MSG_TX) and report its answer:
+     * `found` with the tx (from its mempool or relay cache), or `notfound`.
+     * Rejects on timeout or disconnect, which mean "no answer", not "not found".
+     *
+     * Note that Core only serves a mempool tx it has announced to us or that is
+     * older than its unconditional relay delay, so a tx the peer received very
+     * recently may come back as `notfound`.
+     *
+     * @param txid display-order hex, as returned by `Transaction.hash()`
+     */
+    queryTransaction(txid: string, options?: TxQueryOptions): Promise<TxQueryResult>;
     private _sendVersion;
     private _sendPong;
     private _readMessage;

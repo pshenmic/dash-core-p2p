@@ -1,6 +1,8 @@
 export { Networks } from './Network.js';
 export { Inventory, InventoryType, InventoryTypeName } from './Inventory.js';
 export { BloomFilter } from './BloomFilter.js';
+// Governance types come from dash-core-sdk; re-exported for convenience.
+export { GovernanceObject, GovernanceVote, GovernanceObjectType, VoteOutcome, VoteSignal, } from 'dash-core-sdk';
 export { MnListDiff, MNLISTDIFF_MIN_PROTOCOL_VERSION, ProTxVersion, MnType, NetInfoPurpose, NetInfoType, } from './MnListDiff.js';
 export { Messages, MessageParseError } from './messages/Messages.js';
 export { Message } from './messages/Message.js';
@@ -27,4 +29,8 @@ export { GetCFCheckptMessage } from './messages/commands/GetCFCheckptMessage.js'
 export { CFCheckptMessage } from './messages/commands/CFCheckptMessage.js';
 export { CompactFilter, decodeGCS, deriveFilterKey, nextFilterHeader, BASIC_FILTER_TYPE, GCS_P, GCS_M, NODE_COMPACT_FILTERS, } from './CompactFilter.js';
 export { siphash24 } from './SipHash.js';
+export { GovSyncMessage } from './messages/commands/GovSyncMessage.js';
+export { GovObjMessage } from './messages/commands/GovObjMessage.js';
+export { GovObjVoteMessage } from './messages/commands/GovObjVoteMessage.js';
+export { NotFoundMessage } from './messages/commands/NotFoundMessage.js';
 //# sourceMappingURL=index.js.map

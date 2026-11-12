@@ -41,6 +41,9 @@ import { GetCFHeadersMessage } from './commands/GetCFHeadersMessage.js';
 import { CFHeadersMessage } from './commands/CFHeadersMessage.js';
 import { GetCFCheckptMessage } from './commands/GetCFCheckptMessage.js';
 import { CFCheckptMessage } from './commands/CFCheckptMessage.js';
+import { GovSyncMessage } from './commands/GovSyncMessage.js';
+import { GovObjMessage } from './commands/GovObjMessage.js';
+import { GovObjVoteMessage } from './commands/GovObjVoteMessage.js';
 export interface BuilderOptions {
     network?: Network;
     protocolVersion?: number;
@@ -111,6 +114,9 @@ declare const COMMAND_MAP: {
     cfheaders: typeof CFHeadersMessage;
     getcfcheckpt: typeof GetCFCheckptMessage;
     cfcheckpt: typeof CFCheckptMessage;
+    govsync: typeof GovSyncMessage;
+    govobj: typeof GovObjMessage;
+    govobjvote: typeof GovObjVoteMessage;
 };
 declare const COMMAND_NAMES: {
     readonly version: "Version";
@@ -153,6 +159,9 @@ declare const COMMAND_NAMES: {
     readonly cfheaders: "CFHeaders";
     readonly getcfcheckpt: "GetCFCheckpt";
     readonly cfcheckpt: "CFCheckpt";
+    readonly govsync: "GovSync";
+    readonly govobj: "GovObj";
+    readonly govobjvote: "GovObjVote";
 };
 declare const INVENTORY_COMMANDS: readonly ["getdata", "inv", "notfound"];
 type CommandMap = typeof COMMAND_MAP;

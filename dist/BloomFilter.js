@@ -9,23 +9,39 @@ export class BloomFilter {
     nTweak;
     nFlags;
     vData;
+    /**
+     * Null for a degenerate filter (no data or no hash functions), such as
+     * Core's default-constructed CBloomFilter used in govsync. The library
+     * cannot represent those.
+     */
     inner;
     constructor(nHashFuncs, nTweak, nFlags, vData) {
         this.nHashFuncs = nHashFuncs;
         this.nTweak = nTweak;
         this.nFlags = nFlags;
         this.vData = vData;
-        this.inner = new bloomFilterLib({ vData, nHashFuncs, nTweak, nFlags });
+        this.inner = nHashFuncs > 0 && vData.length > 0
+            ? new bloomFilterLib({ vData, nHashFuncs, nTweak, nFlags })
+            : null;
+    }
+    /** An empty filter as Core default-constructs it (no data, no hash functions). */
+    static empty() {
+        return new BloomFilter(0, 0, 0, []);
     }
     static create(n, fpRate, nTweak = 0, nFlags = BloomFilter.BLOOM_UPDATE_ALL) {
         const inner = bloomFilterLib.create(n, fpRate, nTweak, nFlags);
         return new BloomFilter(inner.nHashFuncs, inner.nTweak, inner.nFlags, inner.vData);
     }
     insert(data) {
+        if (!this.inner)
+            return; // nothing to set, as in Core
         this.inner.insert(data);
         this.vData = this.inner.vData;
     }
+    /** Like Core, a degenerate filter matches everything. */
     contains(data) {
+        if (!this.inner)
+            return true;
         return this.inner.contains(data);
     }
     static fromBytes(payload) {

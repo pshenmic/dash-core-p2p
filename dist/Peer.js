@@ -1,6 +1,8 @@
 import EventEmitter from 'eventemitter3';
 import { Messages } from './messages/Messages.js';
 import { Networks } from './Network.js';
+import { InventoryType } from './Inventory.js';
+import { bytesEqual, hexToBytes, reverseBytes } from './utils/binary.js';
 export const PeerStatus = {
     DISCONNECTED: 'disconnected',
     CONNECTING: 'connecting',
@@ -143,6 +145,74 @@ export class Peer extends EventEmitter {
      */
     sendMessage(message) {
         this.socket?.write(message.toBytes());
+    }
+    /**
+     * Ask the peer for a transaction with getdata(MSG_TX) and report its answer:
+     * `found` with the tx (from its mempool or relay cache), or `notfound`.
+     * Rejects on timeout or disconnect, which mean "no answer", not "not found".
+     *
+     * Note that Core only serves a mempool tx it has announced to us or that is
+     * older than its unconditional relay delay, so a tx the peer received very
+     * recently may come back as `notfound`.
+     *
+     * @param txid display-order hex, as returned by `Transaction.hash()`
+     */
+    queryTransaction(txid, options) {
+        if (!/^[0-9a-fA-F]{64}$/.test(txid)) {
+            return Promise.reject(new Error('queryTransaction: txid must be a 32-byte hex string'));
+        }
+        const display = txid.toLowerCase();
+        const wire = reverseBytes(hexToBytes(display));
+        const timeoutMs = options?.timeout ?? 30_000;
+        return new Promise((resolve, reject) => {
+            let timer;
+            const cleanup = () => {
+                if (timer !== undefined)
+                    clearTimeout(timer);
+                this.off('tx', onTx);
+                this.off('notfound', onNotFound);
+                this.off('disconnect', onDisconnect);
+            };
+            const onTx = (message) => {
+                let hash;
+                try {
+                    hash = message.transaction?.hash();
+                }
+                catch {
+                    return;
+                }
+                if (hash !== display)
+                    return;
+                cleanup();
+                resolve({ status: 'found', tx: message.transaction });
+            };
+            const onNotFound = (message) => {
+                const match = (message.inventory ?? []).some((item) => (item.type === InventoryType.TX || item.type === InventoryType.DSTX) && bytesEqual(item.hash, wire));
+                if (!match)
+                    return;
+                cleanup();
+                resolve({ status: 'notfound' });
+            };
+            const onDisconnect = () => {
+                cleanup();
+                reject(new Error(`queryTransaction: peer disconnected before answering for ${display}`));
+            };
+            this.on('tx', onTx);
+            this.on('notfound', onNotFound);
+            this.on('disconnect', onDisconnect);
+            timer = setTimeout(() => {
+                cleanup();
+                reject(new Error(`queryTransaction: no answer for ${display} within ${timeoutMs}ms`));
+            }, timeoutMs);
+            try {
+                const getdata = this.messages.GetData([{ type: InventoryType.TX, hash: wire }]);
+                this.sendMessage(getdata);
+            }
+            catch (e) {
+                cleanup();
+                reject(e);
+            }
+        });
     }
     _sendVersion() {
         const message = this.messages.Version({ relay: this.relay });

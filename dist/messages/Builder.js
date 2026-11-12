@@ -41,6 +41,9 @@ import { GetCFHeadersMessage } from './commands/GetCFHeadersMessage.js';
 import { CFHeadersMessage } from './commands/CFHeadersMessage.js';
 import { GetCFCheckptMessage } from './commands/GetCFCheckptMessage.js';
 import { CFCheckptMessage } from './commands/CFCheckptMessage.js';
+import { GovSyncMessage } from './commands/GovSyncMessage.js';
+import { GovObjMessage } from './commands/GovObjMessage.js';
+import { GovObjVoteMessage } from './commands/GovObjVoteMessage.js';
 const COMMAND_MAP = {
     version: VersionMessage,
     verack: VerAckMessage,
@@ -82,6 +85,9 @@ const COMMAND_MAP = {
     cfheaders: CFHeadersMessage,
     getcfcheckpt: GetCFCheckptMessage,
     cfcheckpt: CFCheckptMessage,
+    govsync: GovSyncMessage,
+    govobj: GovObjMessage,
+    govobjvote: GovObjVoteMessage,
 };
 const COMMAND_NAMES = {
     version: 'Version',
@@ -124,6 +130,9 @@ const COMMAND_NAMES = {
     cfheaders: 'CFHeaders',
     getcfcheckpt: 'GetCFCheckpt',
     cfcheckpt: 'CFCheckpt',
+    govsync: 'GovSync',
+    govobj: 'GovObj',
+    govobjvote: 'GovObjVote',
 };
 const INVENTORY_COMMANDS = ['getdata', 'inv', 'notfound'];
 export function builder(options) {
@@ -168,9 +177,6 @@ export function builder(options) {
             'dssu',
             'dstx',
             'dseg',
-            'govsync',
-            'govobj',
-            'govobjvote',
             // Masternode/quorum DKG and auth commands — safe to ignore in an SPV
             // client that only cares about txs, blocks, and filter matches.
             'mnauth',

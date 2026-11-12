@@ -155,7 +155,37 @@ export declare class MnListDiff {
      * Merkle root over all active quorum commitments, in display order.
      * Commitment hashes are sorted by their wire bytes, as Core does. Compare
      * with `merkleRootQuorums` on a diff from the zero base hash (whose
-     * newQuorums are all active quorums), or on a quorum list built from diffs.
+     * newQuorums are all active quorums), or on a quorum list built from diffs
+     * (see {@link applyQuorumsTo}).
      */
     static calcMerkleRootQuorums(commitments: FinalCommitment[]): string;
+    /** CbTx version (1: MN list root only, 2+: adds merkleRootQuorums, 3+: chainlock and credit pool). */
+    get coinbaseVersion(): number | undefined;
+    /**
+     * The masternode list at `blockHash`: `previousEntries` (the list at
+     * `baseBlockHash`) minus `deletedMNs`, with `mnList` entries added or
+     * replacing those with the same proRegTxHash. Input is not modified.
+     * Use [] as the previous list for a diff from the zero base hash.
+     */
+    applyTo(previousEntries: SimplifiedMNListEntry[]): SimplifiedMNListEntry[];
+    /**
+     * The active quorum commitments at `blockHash`: `previousCommitments` minus
+     * `deletedQuorums`, with `newQuorums` added or replacing those with the
+     * same (llmqType, quorumHash). Input is not modified.
+     */
+    applyQuorumsTo(previousCommitments: FinalCommitment[]): FinalCommitment[];
+    /**
+     * Check this diff against the 80-byte header of `blockHash` and the full
+     * lists at that block (normally `applyTo(prev)` / `applyQuorumsTo(prev)`):
+     *
+     *  - the header hashes (X11) to `blockHash`;
+     *  - the partial merkle tree proves the coinbase is the block's first
+     *    transaction under the header's merkle root;
+     *  - merkleRootMNList in the coinbase matches `entries`;
+     *  - merkleRootQuorums matches `commitments` (CbTx version >= 2).
+     *
+     * Throws an Error naming the first failed check; returns normally if all pass.
+     * Quorum and chainlock signatures are not checked.
+     */
+    verify(header80: Uint8Array, entries: SimplifiedMNListEntry[], commitments: FinalCommitment[]): void;
 }

@@ -10,6 +10,8 @@ export declare const InventoryType: {
     readonly BLOCK: 2;
     readonly FILTERED_BLOCK: 3;
     readonly DSTX: 16;
+    readonly GOVERNANCE_OBJECT: 17;
+    readonly GOVERNANCE_OBJECT_VOTE: 18;
     readonly CLSIG: 29;
     readonly ISLOCK: 30;
     readonly ISDLOCK: 31;
@@ -25,6 +27,8 @@ export declare class Inventory {
     static forTransaction(hash: Uint8Array | string): Inventory;
     static forISLock(hash: Uint8Array | string): Inventory;
     static forISDLock(hash: Uint8Array | string): Inventory;
+    static forGovernanceObject(hash: Uint8Array | string): Inventory;
+    static forGovernanceVote(hash: Uint8Array | string): Inventory;
     static forCLSig(hash: Uint8Array | string): Inventory;
     toBytes(): Uint8Array;
     toBufferWriter(bw: BufferWriter): BufferWriter;
@@ -36,6 +40,8 @@ export declare class Inventory {
         readonly BLOCK: 2;
         readonly FILTERED_BLOCK: 3;
         readonly DSTX: 16;
+        readonly GOVERNANCE_OBJECT: 17;
+        readonly GOVERNANCE_OBJECT_VOTE: 18;
         readonly CLSIG: 29;
         readonly ISLOCK: 30;
         readonly ISDLOCK: 31;
