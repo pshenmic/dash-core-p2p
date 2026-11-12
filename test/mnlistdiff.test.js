@@ -22,6 +22,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Full list (base = zero hash) at mainnet block 2552448, fetched from a Dash Core 23.1.2 node.
 const mainnetFull = new Uint8Array(gunzipSync(readFileSync(join(__dirname, 'data/mnlistdiff-mainnet-2552448.bin.gz'))));
+const Headers = require('./data/block-headers.json');
+const header = (key) => hexToBytes(Headers[key].header);
 // 100-block testnet diff (quorums only), Dash Core 24.0.0.
 const testnetSmall = hexToBytes(Data.mnlistdiff.message.slice(48));
 
@@ -276,6 +278,73 @@ describe('MnListDiff', function () {
 
     it('rejects protocol versions with a different layout', function () {
       (() => MnListDiff.fromBytes(testnetSmall, 70229)).should.throw(/not supported/);
+    });
+  });
+
+  describe('apply and verify', function () {
+    const mainnet = MnListDiff.fromBytes(mainnetFull);
+    const mainnetHeader = header('mainnet-2552448');
+    const entries = mainnet.applyTo([]);
+    const commitments = mainnet.applyQuorumsTo([]);
+
+    it('exposes the coinbase version and roots', function () {
+      mainnet.coinbaseVersion.should.equal(3);
+      mainnet.merkleRootQuorums.should.match(/^[0-9a-f]{64}$/);
+    });
+
+    it('verifies the recorded mainnet full list against its header', function () {
+      mainnet.verify(mainnetHeader, entries, commitments);
+    });
+
+    it('applyTo removes deleted entries and replaces updated ones without mutating input', function () {
+      const diff = new MnListDiff();
+      const updated = { ...entries[1], isValid: !entries[1].isValid };
+      const added = { ...entries[2], proRegTxHash: 'ab'.repeat(32) };
+      diff.deletedMNs = [entries[0].proRegTxHash];
+      diff.mnList = [updated, added];
+      const next = diff.applyTo(entries);
+      next.length.should.equal(entries.length);
+      should.not.exist(next.find((e) => e.proRegTxHash === entries[0].proRegTxHash));
+      next.find((e) => e.proRegTxHash === updated.proRegTxHash).should.equal(updated);
+      next.should.include(added);
+      entries.length.should.equal(mainnet.mnList.length);
+    });
+
+    it('applyQuorumsTo keys commitments by llmqType and quorumHash', function () {
+      const diff = new MnListDiff();
+      diff.deletedQuorums = [{ llmqType: commitments[0].llmqType, quorumHash: commitments[0].quorumHash }];
+      diff.newQuorums = [{ ...commitments[1] }];
+      const next = diff.applyQuorumsTo(commitments);
+      next.length.should.equal(commitments.length - 1);
+      next.should.include(diff.newQuorums[0]);
+      next.should.not.include(commitments[1]);
+    });
+
+    it('rejects a header for another block', function () {
+      (() => mainnet.verify(header('testnet-1589783'), entries, commitments)).should.throw(/header hash/);
+      (() => mainnet.verify(new Uint8Array(79), [], [])).should.throw(/80 bytes/);
+    });
+
+    it('rejects a tampered partial merkle tree', function () {
+      const bad = MnListDiff.fromBytes(mainnetFull);
+      bad.merkleHashes[1] = 'ff'.repeat(32);
+      (() => bad.verify(mainnetHeader, entries, commitments)).should.throw(/merkle root/);
+      const badFlags = MnListDiff.fromBytes(mainnetFull);
+      badFlags.merkleFlags = [...badFlags.merkleFlags, 0];
+      (() => badFlags.verify(mainnetHeader, entries, commitments)).should.throw(/malformed partial merkle tree/);
+    });
+
+    it('rejects a tree that proves a different coinbase', function () {
+      const other = MnListDiff.fromBytes(testnetSmall);
+      const bad = MnListDiff.fromBytes(mainnetFull);
+      bad.cbTxBytes = other.cbTxBytes;
+      bad.cbTx = other.cbTx;
+      (() => bad.verify(mainnetHeader, entries, commitments)).should.throw(/coinbase/);
+    });
+
+    it('rejects lists that do not match the coinbase roots', function () {
+      (() => mainnet.verify(mainnetHeader, entries.slice(1), commitments)).should.throw(/merkleRootMNList/);
+      (() => mainnet.verify(mainnetHeader, entries, commitments.slice(1))).should.throw(/merkleRootQuorums/);
     });
   });
 

@@ -6,6 +6,16 @@ export type { InventoryObject } from './Inventory.js';
 
 export { BloomFilter } from './BloomFilter.js';
 
+// Governance types come from dash-core-sdk; re-exported for convenience.
+export {
+  GovernanceObject,
+  GovernanceVote,
+  GovernanceObjectType,
+  VoteOutcome,
+  VoteSignal,
+} from 'dash-core-sdk';
+export type { GovernanceObjectJSON, GovernanceVoteJSON, GovernanceProposal } from 'dash-core-sdk';
+
 export {
   MnListDiff,
   MNLISTDIFF_MIN_PROTOCOL_VERSION,
@@ -41,7 +51,7 @@ export type { GetMnListDiffArgs } from './messages/commands/GetMnListDiffMessage
 export { MnListDiffMessage } from './messages/commands/MnListDiffMessage.js';
 
 export { Peer, PeerStatus } from './Peer.js';
-export type { PeerOptions, TCPSocket, SocketFactory, PeerStatusType } from './Peer.js';
+export type { PeerOptions, TCPSocket, SocketFactory, PeerStatusType, TxQueryResult, TxQueryOptions } from './Peer.js';
 
 export { Pool } from './Pool.js';
 export type { PoolOptions, AddrInfo } from './Pool.js';
@@ -99,4 +109,10 @@ export {
   NODE_COMPACT_FILTERS,
 } from './CompactFilter.js';
 export { siphash24 } from './SipHash.js';
+
+export { GovSyncMessage } from './messages/commands/GovSyncMessage.js';
+export type { GovSyncArgs } from './messages/commands/GovSyncMessage.js';
+export { GovObjMessage } from './messages/commands/GovObjMessage.js';
+export { GovObjVoteMessage } from './messages/commands/GovObjVoteMessage.js';
+export { NotFoundMessage } from './messages/commands/NotFoundMessage.js';
 

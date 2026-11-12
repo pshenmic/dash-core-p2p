@@ -44,6 +44,9 @@ import { GetCFHeadersMessage } from './commands/GetCFHeadersMessage.js';
 import { CFHeadersMessage } from './commands/CFHeadersMessage.js';
 import { GetCFCheckptMessage } from './commands/GetCFCheckptMessage.js';
 import { CFCheckptMessage } from './commands/CFCheckptMessage.js';
+import { GovSyncMessage } from './commands/GovSyncMessage.js';
+import { GovObjMessage } from './commands/GovObjMessage.js';
+import { GovObjVoteMessage } from './commands/GovObjVoteMessage.js';
 
 export interface BuilderOptions {
   network?: Network;
@@ -119,6 +122,9 @@ const COMMAND_MAP = {
   cfheaders: CFHeadersMessage,
   getcfcheckpt: GetCFCheckptMessage,
   cfcheckpt: CFCheckptMessage,
+  govsync: GovSyncMessage,
+  govobj: GovObjMessage,
+  govobjvote: GovObjVoteMessage,
 } satisfies Record<string, new (arg: any, options: any) => Message>;
 
 const COMMAND_NAMES = {
@@ -162,6 +168,9 @@ const COMMAND_NAMES = {
   cfheaders: 'CFHeaders',
   getcfcheckpt: 'GetCFCheckpt',
   cfcheckpt: 'CFCheckpt',
+  govsync: 'GovSync',
+  govobj: 'GovObj',
+  govobjvote: 'GovObjVote',
 } as const satisfies Record<keyof typeof COMMAND_MAP, string>;
 
 const INVENTORY_COMMANDS = ['getdata', 'inv', 'notfound'] as const;
@@ -225,9 +234,6 @@ export function builder(options?: BuilderOptions): Builder {
       'dssu',
       'dstx',
       'dseg',
-      'govsync',
-      'govobj',
-      'govobjvote',
       // Masternode/quorum DKG and auth commands — safe to ignore in an SPV
       // client that only cares about txs, blocks, and filter matches.
       'mnauth',

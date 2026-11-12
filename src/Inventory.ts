@@ -13,6 +13,8 @@ export const InventoryType = {
   BLOCK: 2,
   FILTERED_BLOCK: 3,
   DSTX: 16,
+  GOVERNANCE_OBJECT: 17,
+  GOVERNANCE_OBJECT_VOTE: 18,
   CLSIG: 29,
   ISLOCK: 30,
   ISDLOCK: 31,
@@ -64,6 +66,14 @@ export class Inventory {
 
   static forISDLock(hash: Uint8Array | string): Inventory {
     return Inventory.forItem(InventoryType.ISDLOCK, hash);
+  }
+
+  static forGovernanceObject(hash: Uint8Array | string): Inventory {
+    return Inventory.forItem(InventoryType.GOVERNANCE_OBJECT, hash);
+  }
+
+  static forGovernanceVote(hash: Uint8Array | string): Inventory {
+    return Inventory.forItem(InventoryType.GOVERNANCE_OBJECT_VOTE, hash);
   }
 
   static forCLSig(hash: Uint8Array | string): Inventory {
