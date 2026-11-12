@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from 'dash-core-sdk';
 import { Networks, type Network } from '../Network.js';
-import { builder, type BuilderOptions, type Builder } from './Builder.js';
+import { builder, type BuilderOptions, type Builder, type NamedMessageFactories } from './Builder.js';
 import { Message } from './Message.js';
 import { bytesEqual, bytesToStr } from '../utils/binary.js';
 
@@ -25,6 +25,9 @@ export class MessageParseError extends Error {
   }
 }
 
+/** Typed factories for the built-in commands, e.g. `messages.GetMnListDiff({ ... })`. */
+export interface Messages extends NamedMessageFactories {}
+
 /**
  * A factory to build Dash protocol messages and parse incoming data.
  */
@@ -45,7 +48,7 @@ export class Messages {
     // Expose message factories by capitalized name
     for (const key of Object.keys(this.builderInstance.commandsMap)) {
       const name = this.builderInstance.commandsMap[key]!;
-      this[name] = this.builderInstance.commands[key]!;
+      (this as Record<string, unknown>)[name] = this.builderInstance.commands[key]!;
     }
 
     this.network = Networks.get(options?.network as string | Network) ?? Networks.defaultNetwork;
@@ -134,6 +137,6 @@ export class Messages {
 
   add(key: string, name: string, Command: new (arg: unknown, options: object) => Message): void {
     this.builderInstance.add(key, Command as any);
-    this[name] = this.builderInstance.commands[key]!;
+    (this as Record<string, unknown>)[name] = this.builderInstance.commands[key]!;
   }
 }

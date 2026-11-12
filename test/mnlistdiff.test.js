@@ -22,6 +22,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Full list (base = zero hash) at mainnet block 2552448, fetched from a Dash Core 23.1.2 node.
 const mainnetFull = new Uint8Array(gunzipSync(readFileSync(join(__dirname, 'data/mnlistdiff-mainnet-2552448.bin.gz'))));
+const Headers = require('./data/block-headers.json');
+const header = (key) => hexToBytes(Headers[key].header);
 // 100-block testnet diff (quorums only), Dash Core 24.0.0.
 const testnetSmall = hexToBytes(Data.mnlistdiff.message.slice(48));
 
@@ -102,6 +104,84 @@ describe('MnListDiff', function () {
       const list = diff.mnList.map((e) => ({ ...e }));
       list[5].isValid = !list[5].isValid;
       MnListDiff.calcMerkleRootMNList(list).should.not.equal(diff.merkleRootMNList);
+    });
+
+    it('exposes coinbaseHeight and merkleRootQuorums', function () {
+      diff.coinbaseHeight.should.equal(2552448);
+      diff.merkleRootQuorums.should.equal('ac758e0d8b586d344cb73b6985380df4a6cd849d12a3d9ccc3b31041aac1a0ee');
+    });
+
+    it('computes merkleRootQuorums matching the coinbase', function () {
+      MnListDiff.calcMerkleRootQuorums(diff.newQuorums).should.equal(diff.merkleRootQuorums);
+      // Order of the input doesn't matter: hashes are sorted.
+      MnListDiff.calcMerkleRootQuorums([...diff.newQuorums].reverse()).should.equal(diff.merkleRootQuorums);
+    });
+
+    it('merkleRootQuorums detects a modified or missing commitment', function () {
+      const quorums = diff.newQuorums.map((q) => ({ ...q }));
+      quorums[3].signers = quorums[3].signers.map((b, i) => (i === 0 ? !b : b));
+      MnListDiff.calcMerkleRootQuorums(quorums).should.not.equal(diff.merkleRootQuorums);
+      MnListDiff.calcMerkleRootQuorums(diff.newQuorums.slice(1)).should.not.equal(diff.merkleRootQuorums);
+    });
+
+    it('hashes a commitment as sha256d of its wire bytes', function () {
+      const q = diff.newQuorums[0];
+      const hash = MnListDiff.calcCommitmentHash(q);
+      hash.length.should.equal(32);
+      const changed = MnListDiff.calcCommitmentHash({ ...q, quorumSig: 'ff' + q.quorumSig.slice(2) });
+      bytesToHex(changed).should.not.equal(bytesToHex(hash));
+    });
+
+    it('rebuilds the block merkle root from the coinbase proof', function () {
+      // Header merkle root of mainnet block 2552448.
+      diff.calcBlockMerkleRoot().should.equal('f568a3d5145230f78c2e02f1fdc7359d1901c2cbded05aeaf410c3bcc2c1ca70');
+    });
+
+    describe('calcBlockMerkleRoot rejects', function () {
+      const withProof = (changes) => Object.assign(MnListDiff.fromBytes(mainnetFull), changes);
+
+      it('a tampered sibling hash (root changes)', function () {
+        const hashes = [...diff.merkleHashes];
+        hashes[1] = '00' + hashes[1].slice(2);
+        withProof({ merkleHashes: hashes }).calcBlockMerkleRoot().should.not.equal(diff.calcBlockMerkleRoot());
+      });
+
+      it('a proof for a transaction other than the coinbase', function () {
+        const hashes = [...diff.merkleHashes];
+        hashes[0] = '00' + hashes[0].slice(2);
+        should.equal(withProof({ merkleHashes: hashes }).calcBlockMerkleRoot(), null);
+      });
+
+      it('unused hashes or flag bytes', function () {
+        should.equal(withProof({ merkleHashes: [...diff.merkleHashes, diff.merkleHashes[0]] }).calcBlockMerkleRoot(), null);
+        should.equal(withProof({ merkleFlags: [...diff.merkleFlags, 0] }).calcBlockMerkleRoot(), null);
+      });
+
+      it('too few hashes or flags', function () {
+        should.equal(withProof({ merkleHashes: diff.merkleHashes.slice(0, -1) }).calcBlockMerkleRoot(), null);
+        should.equal(withProof({ merkleFlags: [] }).calcBlockMerkleRoot(), null);
+      });
+
+      it('zero or oversized totalTransactions', function () {
+        should.equal(withProof({ totalTransactions: 0 }).calcBlockMerkleRoot(), null);
+        should.equal(withProof({ totalTransactions: 1_000_000 }).calcBlockMerkleRoot(), null);
+      });
+
+      it('a match not at position 0', function () {
+        // 2 txs: root (descend) -> leaf 0 (no match) -> leaf 1 (match = coinbase)
+        const cb = bytesToHex(sha256d(diff.cbTxBytes).reverse());
+        const other = '11'.repeat(32);
+        should.equal(withProof({ totalTransactions: 2, merkleHashes: [other, cb], merkleFlags: [0b101] }).calcBlockMerkleRoot(), null);
+      });
+
+      it('a mutated tree with duplicate siblings (CVE-2012-2459)', function () {
+        // 2 txs: root (descend) -> leaf 0 (match = coinbase) -> leaf 1 (no match)
+        const cb = bytesToHex(sha256d(diff.cbTxBytes).reverse());
+        const ok = withProof({ totalTransactions: 2, merkleHashes: [cb, '11'.repeat(32)], merkleFlags: [0b011] });
+        should.not.equal(ok.calcBlockMerkleRoot(), null);
+        const mutated = withProof({ totalTransactions: 2, merkleHashes: [cb, cb], merkleFlags: [0b011] });
+        should.equal(mutated.calcBlockMerkleRoot(), null);
+      });
     });
   });
 
@@ -198,6 +278,73 @@ describe('MnListDiff', function () {
 
     it('rejects protocol versions with a different layout', function () {
       (() => MnListDiff.fromBytes(testnetSmall, 70229)).should.throw(/not supported/);
+    });
+  });
+
+  describe('apply and verify', function () {
+    const mainnet = MnListDiff.fromBytes(mainnetFull);
+    const mainnetHeader = header('mainnet-2552448');
+    const entries = mainnet.applyTo([]);
+    const commitments = mainnet.applyQuorumsTo([]);
+
+    it('exposes the coinbase version and roots', function () {
+      mainnet.coinbaseVersion.should.equal(3);
+      mainnet.merkleRootQuorums.should.match(/^[0-9a-f]{64}$/);
+    });
+
+    it('verifies the recorded mainnet full list against its header', function () {
+      mainnet.verify(mainnetHeader, entries, commitments);
+    });
+
+    it('applyTo removes deleted entries and replaces updated ones without mutating input', function () {
+      const diff = new MnListDiff();
+      const updated = { ...entries[1], isValid: !entries[1].isValid };
+      const added = { ...entries[2], proRegTxHash: 'ab'.repeat(32) };
+      diff.deletedMNs = [entries[0].proRegTxHash];
+      diff.mnList = [updated, added];
+      const next = diff.applyTo(entries);
+      next.length.should.equal(entries.length);
+      should.not.exist(next.find((e) => e.proRegTxHash === entries[0].proRegTxHash));
+      next.find((e) => e.proRegTxHash === updated.proRegTxHash).should.equal(updated);
+      next.should.include(added);
+      entries.length.should.equal(mainnet.mnList.length);
+    });
+
+    it('applyQuorumsTo keys commitments by llmqType and quorumHash', function () {
+      const diff = new MnListDiff();
+      diff.deletedQuorums = [{ llmqType: commitments[0].llmqType, quorumHash: commitments[0].quorumHash }];
+      diff.newQuorums = [{ ...commitments[1] }];
+      const next = diff.applyQuorumsTo(commitments);
+      next.length.should.equal(commitments.length - 1);
+      next.should.include(diff.newQuorums[0]);
+      next.should.not.include(commitments[1]);
+    });
+
+    it('rejects a header for another block', function () {
+      (() => mainnet.verify(header('testnet-1589783'), entries, commitments)).should.throw(/header hash/);
+      (() => mainnet.verify(new Uint8Array(79), [], [])).should.throw(/80 bytes/);
+    });
+
+    it('rejects a tampered partial merkle tree', function () {
+      const bad = MnListDiff.fromBytes(mainnetFull);
+      bad.merkleHashes[1] = 'ff'.repeat(32);
+      (() => bad.verify(mainnetHeader, entries, commitments)).should.throw(/merkle root/);
+      const badFlags = MnListDiff.fromBytes(mainnetFull);
+      badFlags.merkleFlags = [...badFlags.merkleFlags, 0];
+      (() => badFlags.verify(mainnetHeader, entries, commitments)).should.throw(/malformed partial merkle tree/);
+    });
+
+    it('rejects a tree that proves a different coinbase', function () {
+      const other = MnListDiff.fromBytes(testnetSmall);
+      const bad = MnListDiff.fromBytes(mainnetFull);
+      bad.cbTxBytes = other.cbTxBytes;
+      bad.cbTx = other.cbTx;
+      (() => bad.verify(mainnetHeader, entries, commitments)).should.throw(/coinbase/);
+    });
+
+    it('rejects lists that do not match the coinbase roots', function () {
+      (() => mainnet.verify(mainnetHeader, entries.slice(1), commitments)).should.throw(/merkleRootMNList/);
+      (() => mainnet.verify(mainnetHeader, entries, commitments.slice(1))).should.throw(/merkleRootQuorums/);
     });
   });
 
