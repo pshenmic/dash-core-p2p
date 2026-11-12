@@ -361,10 +361,10 @@ cross-spawn@^7.0.6:
     shebang-command "^2.0.0"
     which "^2.0.1"
 
-dash-core-sdk@1.1.4:
-  version "1.1.4"
-  resolved "https://registry.yarnpkg.com/dash-core-sdk/-/dash-core-sdk-1.1.4.tgz#f0ca3e6336acc3f5dced11e739db8f3e79292ca2"
-  integrity sha512-uFvcDA8oo8dh33ZTxvRGKH8UNLuDLxED3YtSbDTlJh0LTxhZtNPZ4k+MSum/tkO2BWUMC3Gt2SRaq3TUlsqUaQ==
+dash-core-sdk@1.1.6-dev.1:
+  version "1.1.6-dev.1"
+  resolved "https://registry.yarnpkg.com/dash-core-sdk/-/dash-core-sdk-1.1.6-dev.1.tgz#cf4922c442d0a02fe5819d78d95b16c1e38beb29"
+  integrity sha512-ScC9dzCQg78g8SttnJ+u4dnS9Q1oh1AV64CvUPmrD6ZwBwQkQsoVRSEQUlkctrAc5++0SNLOI4MlokX8As57nw==
   dependencies:
     "@dashevo/x11-hash-js" "^1.0.2"
     "@noble/curves" "^2.0.1"
