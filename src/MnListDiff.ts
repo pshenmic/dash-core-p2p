@@ -1,4 +1,4 @@
-import { Transaction, utils as sdkUtils } from 'dash-core-sdk';
+import { BlockHeader, CbTxVersion, MerkleTree, Transaction, utils as sdkUtils } from 'dash-core-sdk';
 import { BufferReader } from './encoding/BufferReader.js';
 import { BufferWriter } from './encoding/BufferWriter.js';
 import { bytesToHex, hexToBytes, reverseBytes } from './utils/binary.js';
@@ -601,22 +601,181 @@ export class MnListDiff {
     const sorted = entries
       .map((entry) => ({ key: reverseBytes(hexToBytes(entry.proRegTxHash)), entry }))
       .sort((a, b) => compareBytes(a.key, b.key));
-    let level = sorted.map(({ entry }) => MnListDiff.calcEntryHash(entry));
-    if (level.length === 0) return '0'.repeat(64);
-    while (level.length > 1) {
-      const next: Uint8Array[] = [];
-      for (let i = 0; i < level.length; i += 2) {
-        const left = level[i]!;
-        const right = level[i + 1] ?? left;
-        const pair = new Uint8Array(64);
-        pair.set(left);
-        pair.set(right, 32);
-        next.push(doubleSHA256(pair));
-      }
-      level = next;
-    }
-    return bytesToHex(reverseBytes(level[0]!));
+    return bytesToHex(reverseBytes(merkleRoot(sorted.map(({ entry }) => MnListDiff.calcEntryHash(entry)))));
   }
+
+  /** Hash of a final commitment as used in merkleRootQuorums: sha256d of its serialization. Wire order. */
+  static calcCommitmentHash(commitment: FinalCommitment): Uint8Array {
+    const bw = new BufferWriter();
+    writeFinalCommitment(bw, commitment);
+    return doubleSHA256(bw.concat());
+  }
+
+  /**
+   * Merkle root over the active quorum commitments, in display order:
+   * commitment hashes sorted (memcmp), as Core's CalcCbTxMerkleRootQuorums.
+   * Pass the full commitment list (e.g. from {@link applyQuorumsTo}).
+   */
+  static calcMerkleRootQuorums(commitments: FinalCommitment[]): string {
+    const hashes = commitments.map((q) => MnListDiff.calcCommitmentHash(q)).sort(compareBytes);
+    return bytesToHex(reverseBytes(merkleRoot(hashes)));
+  }
+
+  /** CbTx version (1: MN list root only, 2+: adds merkleRootQuorums, 3+: chainlock and credit pool). */
+  get coinbaseVersion(): number | undefined {
+    return (this.cbTx.extraPayload as { version?: number } | undefined)?.version;
+  }
+
+  /** merkleRootQuorums committed in the coinbase (display order), if present (CbTx version >= 2). */
+  get merkleRootQuorums(): string | undefined {
+    return (this.cbTx.extraPayload as { merkleRootQuorums?: string } | undefined)?.merkleRootQuorums;
+  }
+
+  /**
+   * The masternode list at `blockHash`: `previousEntries` (the list at
+   * `baseBlockHash`) minus `deletedMNs`, with `mnList` entries added or
+   * replacing those with the same proRegTxHash. Input is not modified.
+   * Use [] as the previous list for a diff from the zero base hash.
+   */
+  applyTo(previousEntries: SimplifiedMNListEntry[]): SimplifiedMNListEntry[] {
+    const byHash = new Map<string, SimplifiedMNListEntry>();
+    for (const entry of previousEntries) byHash.set(entry.proRegTxHash, entry);
+    for (const hash of this.deletedMNs) byHash.delete(hash);
+    for (const entry of this.mnList) byHash.set(entry.proRegTxHash, entry);
+    return [...byHash.values()];
+  }
+
+  /**
+   * The active quorum commitments at `blockHash`: `previousCommitments` minus
+   * `deletedQuorums`, with `newQuorums` added or replacing those with the
+   * same (llmqType, quorumHash). Input is not modified.
+   */
+  applyQuorumsTo(previousCommitments: FinalCommitment[]): FinalCommitment[] {
+    const key = (llmqType: number, quorumHash: string) => `${llmqType}:${quorumHash}`;
+    const byKey = new Map<string, FinalCommitment>();
+    for (const q of previousCommitments) byKey.set(key(q.llmqType, q.quorumHash), q);
+    for (const q of this.deletedQuorums) byKey.delete(key(q.llmqType, q.quorumHash));
+    for (const q of this.newQuorums) byKey.set(key(q.llmqType, q.quorumHash), q);
+    return [...byKey.values()];
+  }
+
+  /**
+   * Check this diff against the 80-byte header of `blockHash` and the full
+   * lists at that block (normally `applyTo(prev)` / `applyQuorumsTo(prev)`):
+   *
+   *  - the header hashes (X11) to `blockHash`;
+   *  - the partial merkle tree proves the coinbase is the block's first
+   *    transaction under the header's merkle root;
+   *  - merkleRootMNList in the coinbase matches `entries`;
+   *  - merkleRootQuorums matches `commitments` (CbTx version >= 2).
+   *
+   * Throws an Error naming the first failed check; returns normally if all pass.
+   * Quorum and chainlock signatures are not checked.
+   */
+  verify(header80: Uint8Array, entries: SimplifiedMNListEntry[], commitments: FinalCommitment[]): void {
+    if (!(header80 instanceof Uint8Array) || header80.length !== 80) {
+      throw new Error('mnlistdiff verify: header must be 80 bytes');
+    }
+
+    const headerHash = BlockHeader.fromBytes(header80.slice()).hash();
+    if (headerHash !== this.blockHash) {
+      throw new Error(`mnlistdiff verify: header hash ${headerHash} does not match blockHash ${this.blockHash}`);
+    }
+
+    const coinbaseHash = doubleSHA256(this.cbTxBytes ?? this.cbTx.bytes());
+    const { root, matches } = extractPartialMerkleTree(
+      this.totalTransactions,
+      this.merkleHashes.map((h) => reverseBytes(hexToBytes(h))),
+      this.merkleFlags,
+    );
+    if (!bytesEq(root, header80.subarray(36, 68))) {
+      throw new Error('mnlistdiff verify: partial merkle tree root does not match the header merkle root');
+    }
+    if (matches.length !== 1 || matches[0]!.index !== 0 || !bytesEq(matches[0]!.hash, coinbaseHash)) {
+      throw new Error('mnlistdiff verify: partial merkle tree does not prove the coinbase as the first transaction');
+    }
+
+    const version = this.coinbaseVersion;
+    const expectedMN = this.merkleRootMNList;
+    if (version === undefined || expectedMN === undefined) {
+      throw new Error('mnlistdiff verify: coinbase has no CbTx payload');
+    }
+    const actualMN = MnListDiff.calcMerkleRootMNList(entries);
+    if (actualMN !== expectedMN) {
+      throw new Error(`mnlistdiff verify: merkleRootMNList ${actualMN} does not match coinbase ${expectedMN}`);
+    }
+
+    if (version >= CbTxVersion.MERKLE_ROOT_QUORUMS) {
+      const expectedQ = this.merkleRootQuorums;
+      const actualQ = MnListDiff.calcMerkleRootQuorums(commitments);
+      if (actualQ !== expectedQ) {
+        throw new Error(`mnlistdiff verify: merkleRootQuorums ${actualQ} does not match coinbase ${expectedQ}`);
+      }
+    }
+  }
+}
+
+/** Bitcoin-style merkle root over wire-order hashes (odd levels duplicate the last). Zero for none. */
+function merkleRoot(hashes: Uint8Array[]): Uint8Array {
+  if (hashes.length === 0) return new Uint8Array(32);
+  let level = hashes;
+  while (level.length > 1) {
+    const next: Uint8Array[] = [];
+    for (let i = 0; i < level.length; i += 2) {
+      next.push(hashPair(level[i]!, level[i + 1] ?? level[i]!));
+    }
+    level = next;
+  }
+  return level[0]!;
+}
+
+function hashPair(left: Uint8Array, right: Uint8Array): Uint8Array {
+  const pair = new Uint8Array(64);
+  pair.set(left);
+  pair.set(right, 32);
+  return doubleSHA256(pair);
+}
+
+function bytesEq(a: Uint8Array, b: Uint8Array): boolean {
+  return compareBytes(a, b) === 0;
+}
+
+/**
+ * Walk a CPartialMerkleTree (BIP37) with the SDK's MerkleTree and return its
+ * root and matched leaves (wire order). Unlike MerkleTree.extractMatches this
+ * also does Core's final check that every hash and flag byte was used.
+ */
+function extractPartialMerkleTree(
+  totalTransactions: number,
+  hashes: Uint8Array[],
+  flagBytes: number[],
+): { root: Uint8Array; matches: Array<{ hash: Uint8Array; index: number }> } {
+  const fail = (msg: string): never => { throw new Error(`mnlistdiff verify: malformed partial merkle tree (${msg})`); };
+  const bits: boolean[] = [];
+  for (let p = 0; p < flagBytes.length * 8; p++) bits.push((flagBytes[p >> 3]! & (1 << (p & 7))) !== 0);
+  if (totalTransactions === 0) fail('no transactions');
+  if (hashes.length > totalTransactions) fail('more hashes than transactions');
+  if (bits.length < hashes.length) fail('fewer flag bits than hashes');
+
+  const tree = new MerkleTree(totalTransactions, hashes.map(bytesToHex), bits);
+  let height = 0;
+  while (tree.calcTreeWidth(height) > 1) height++;
+
+  const matched: string[] = [];
+  const indexes: number[] = [];
+  const state = { bitsUsed: 0, hashUsed: 0 };
+  let root = '';
+  try {
+    root = tree.traverseAndExtract(height, 0, matched, indexes, state);
+  } catch (e) {
+    fail((e as Error).message);
+  }
+  if (Math.floor((state.bitsUsed + 7) / 8) !== flagBytes.length) fail('unused flag bytes');
+  if (state.hashUsed !== hashes.length) fail('unused hashes');
+  return {
+    root: hexToBytes(root),
+    matches: matched.map((hash, i) => ({ hash: hexToBytes(hash), index: indexes[i]! })),
+  };
 }
 
 function compareBytes(a: Uint8Array, b: Uint8Array): number {
